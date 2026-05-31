@@ -41,6 +41,12 @@ WORKER_TIMEOUT_SECONDS = int(os.getenv("WORKER_TIMEOUT_SECONDS", 300))
 # 파일 분할(Chunking) 비동기 처리 시 동시 요청 제한 수 (기본값 3)
 ASYNC_CHUNK_CONCURRENCY = int(os.getenv("ASYNC_CHUNK_CONCURRENCY", 3))
 
+# DDL(.sql) 파일 전용 분할 비동기 처리 동시 요청 제한 수 (기본값 1)
+ASYNC_CHUNK_CONCURRENCY_SQL = int(os.getenv("ASYNC_CHUNK_CONCURRENCY_SQL", 1))
+
+# 분석에서 제외할 경로 리스트 (쉼표로 구분하여 리스트로 변환)
+EXCLUDE_PATHS = [p.strip().replace('\\', '/') for p in os.getenv("EXCLUDE_PATHS", "").split(",") if p.strip()]
+
 # 필수 API 설정 누락에 대한 방어 로직
 if not LLM_BASE_URL or not LLM_API_KEY:
     raise ValueError("LLM_BASE_URL 또는 LLM_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")

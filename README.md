@@ -79,8 +79,77 @@ graph TD
 ---
 
 ## 🚀 설치 및 초기 설정 (Installation & Setup)
-
-**1. 저장소 클론 및 패키지 설치**
+**1. 패키지 설치**
 ```bash
 pip install -r requirements.txt
 ```
+
+**2. 환경 변수(`.env`) 설정**
+프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 아래 내용을 본인의 환경에 맞게 작성합니다.
+
+```dotenv
+# 1. 분석할 로컬 소스 코드 경로 (SVN/Git 체크아웃 폴더 등)
+SOURCE_DIRECTORY=C:/path/to/your/monolith_source
+
+# 2. 사내 LLM (Qwen 3.5 등) API 설정
+LLM_BASE_URL=http://your-internal-llm-server/v1
+LLM_API_KEY=your_internal_llm_api_key
+LLM_MODEL_NAME=qwen3.5
+
+# 3. 분석 제외 경로 (쉼표로 구분)
+EXCLUDE_PATHS=com/example/common,src/test
+
+# 4. 성능 튜닝 (PC 및 서버 스펙에 맞게 조절)
+LLM_MAX_WORKERS=5                # 동시에 분석할 파일(프로세스) 개수 (OOM 발생 시 2~3으로 하향)
+WORKER_TIMEOUT_SECONDS=300       # 개별 파일 분석 최대 허용 시간 (초 단위)
+ASYNC_CHUNK_CONCURRENCY=3        # 대용량 Java/XML 분할 시, 1개 파일 내 동시 비동기 요청 수
+ASYNC_CHUNK_CONCURRENCY_SQL=1    # 대용량 DDL(.sql) 분할 시, 동시 비동기 요청 수 (VRAM 보호를 위해 1 권장)
+```
+
+**3. 사내 폐쇄망(Offline) 설치 가이드 (선택)**
+사내 Nexus(PyPI 프록시)에 `Pebble`, `javalang` 등이 차단되어 설치가 안 되는 경우:
+- **오프라인 반입**: 인터넷이 되는 외부 PC에서 `pip download -r requirements.txt -d ./offline_pkg` 실행 후 사내망으로 가져와 `pip install --no-index --find-links=./offline_pkg -r requirements.txt` 실행
+- **내장 모듈 우회**: `javalang`은 설치하지 못해도 단순 분할로 자동 우회(Fallback)되므로 에러 없이 그대로 사용 가능합니다.
+
+---
+
+## 📖 사용 설명서 (User Guide)
+
+### 1. DB 스키마(DDL) 추출 및 세팅 (권장)
+정확한 데이터베이스 분리와 마이그레이션 우선순위 분석을 위해 ERD에서 DDL을 추출합니다.
+1. SQL Developer Data Modeler에서 `.dmd` 파일을 엽니다.
+2. `File` -> `Export` -> `DDL File`을 통해 `.sql` 스크립트를 추출합니다.
+3. 추출된 `.sql` 파일을 `SOURCE_DIRECTORY` 폴더 안에 넣습니다.
+
+### 2. 파이프라인 분석 실행
+터미널에서 아래 명령어를 실행하여 분석을 시작합니다.
+```bash
+python main.py
+```
+* **자동 재개 (Checkpoint)**: 중단되더라도 다시 실행하면 이미 분석된 파일은 1초 만에 `[SKIP]` 처리되므로 이어서 분석이 가능합니다.
+
+### 3. 결과물 확인 및 공유
+파이프라인이 100% 완료되면 루트 디렉토리에 다음 산출물들이 자동 생성됩니다.
+* **`msa_analysis_output.zip`**: 모든 산출물이 예쁘게 압축된 공유용 파일입니다.
+* **CSV 엑셀 추출물**: `domain_table_mapping.csv` (DB 마이그레이션 팀용), `service_dependencies.csv` (의존성 분석용), `api_endpoints.csv` (엔드포인트 추출용)
+* **리포트**: `msa_analysis_report.html` (웹 브라우저 인터랙티브 리포트), `msa_analysis_report.pdf`, `merged_msa_report.md`
+
+### 4. 서버 장애 누락분 자동 복구 (Recovery)
+사내 LLM 서버의 VRAM 부족(OOM)이나 타임아웃으로 분석이 실패한 파일들만 모아서 빠르게 재분석합니다.
+```bash
+python retry_server_errors.py
+```
+
+### 5. 프로젝트 산출물 초기화 (Clean)
+테스트로 생성된 모든 분석 결과(리포트, 로그, CSV, ZIP 등)를 삭제하고 초기 상태로 되돌립니다.
+```bash
+python clean.py
+```
+
+---
+
+## 🕵️‍♂️ 트러블슈팅 (Troubleshooting)
+
+- **`[⚠️ PDF 생성 실패]`**: OS에 `wkhtmltopdf`가 설치되어 있지 않거나 환경변수(PATH)에 등록되지 않았습니다.
+- **다이어그램 자리에 코드(dot)가 그대로 출력될 때**: OS에 `Graphviz`가 설치되지 않았거나, 설치 시 "Add to PATH" 체크박스를 누락한 경우입니다. 재설치 후 터미널을 재시작하세요.
+- **VRAM OOM (502/503 에러) 발생 시**: `.env` 파일의 `LLM_MAX_WORKERS`를 2 정도로 줄이고, 타임아웃을 600초로 늘려 서버 부하를 낮추세요. 상세 로그는 `error.log` 파일에서 확인할 수 있습니다.

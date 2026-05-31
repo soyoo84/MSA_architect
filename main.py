@@ -7,12 +7,13 @@ from tqdm import tqdm
 from pebble import ProcessPool
 
 # 작성해둔 config.py에서 설정값과 초기화된 LLM 클라이언트를 가져옵니다.
-from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS, ASYNC_CHUNK_CONCURRENCY
-from parser import get_target_files, chunk_java_code, chunk_xml_code
+from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS, ASYNC_CHUNK_CONCURRENCY, ASYNC_CHUNK_CONCURRENCY_SQL, EXCLUDE_PATHS
+from parser import get_target_files, chunk_java_code, chunk_xml_code, chunk_sql_code, extract_sql_object_names
 from llm_service import analyze_with_qwen, summarize_chunks_with_qwen, generate_summary_with_qwen
 from diagram import render_graphviz_to_svg
 import generate_report
 import merge_reports
+import extract_csv
 import zipfile
 
 RESULT_DIR = "./analysis_results"
@@ -48,8 +49,8 @@ def process_file(file_path):
     
     if not needs_chunking:
         try:
-            # LLM 분석 요청 (단일 파일 비동기 호출)
-            result_text = asyncio.run(analyze_with_qwen(source_code))
+            # LLM 분석 요청 (단일 파일 비동기 호출, 파일명 전달)
+            result_text = asyncio.run(analyze_with_qwen(source_code, file_name=file_name))
         except openai.BadRequestError as e:
             # 토큰 한도 초과 등 400 에러 발생 시
             logging.warning(f"토큰 한도 초과 ({file_name}). 분할 분석을 시도합니다: {e}")
@@ -64,9 +65,19 @@ def process_file(file_path):
             
     # needs_chunking이 True가 된 경우 분할 분석 수행
     if needs_chunking:
+        global_context = ""
+        
         if file_name.endswith(".xml"):
             chunks = chunk_xml_code(source_code, max_lines=1500)
             chunk_type = "쿼리(태그)"
+        elif file_name.endswith(".sql"):
+            chunks = chunk_sql_code(source_code, max_lines=1500)
+            chunk_type = "테이블(DDL)"
+            
+            # SQL 파일인 경우 전체 테이블/객체 목록을 추출하여 Global Context로 생성
+            object_names = extract_sql_object_names(source_code)
+            if object_names:
+                global_context = f"\n[전체 시스템 데이터베이스 객체 목록 (참고용: 현재 청크에 없는 객체와의 외부 FK 연관 관계 식별 시 활용)]\n{', '.join(object_names)}\n"
         else:
             chunks = chunk_java_code(source_code, max_lines=1500)
             chunk_type = "메서드"
@@ -75,12 +86,13 @@ def process_file(file_path):
         
         # 청크 조각들을 비동기로 동시에 요청합니다.
         async def process_all_chunks():
-            # 사내 LLM 서버 보호를 위해 Semaphore 적용
-            sem = asyncio.Semaphore(ASYNC_CHUNK_CONCURRENCY)
+            # 사내 LLM 서버 보호를 위해 Semaphore 적용 (SQL 파일은 별도의 엄격한 제한 적용)
+            concurrency_limit = ASYNC_CHUNK_CONCURRENCY_SQL if file_name.endswith(".sql") else ASYNC_CHUNK_CONCURRENCY
+            sem = asyncio.Semaphore(concurrency_limit)
             
             async def bounded_analyze(chunk, i):
                 async with sem:
-                    return await analyze_with_qwen(chunk, is_chunk=True, chunk_info=f"{i+1}/{len(chunks)}")
+                    return await analyze_with_qwen(chunk, is_chunk=True, chunk_info=f"{i+1}/{len(chunks)}", file_name=file_name, global_context=global_context)
                     
             tasks = [bounded_analyze(chunk, i) for i, chunk in enumerate(chunks)]
             return await asyncio.gather(*tasks, return_exceptions=True)
@@ -135,10 +147,11 @@ def generate_architecture_summary():
     print("\n전체 분석 결과를 종합하여 요약 아키텍처 가이드를 생성합니다 (시간이 다소 소요될 수 있습니다)...")
     
     combined_texts = []
-    for file_name in os.listdir(RESULT_DIR):
-        if file_name.endswith(".md") and file_name != "_architecture_summary.md":
-            with open(os.path.join(RESULT_DIR, file_name), "r", encoding="utf-8") as f:
-                combined_texts.append(f"--- {file_name} ---\n{f.read()}\n\n")
+    with os.scandir(RESULT_DIR) as it:
+        for entry in it:
+            if entry.is_file() and entry.name.endswith(".md") and entry.name != "_architecture_summary.md":
+                with open(entry.path, "r", encoding="utf-8") as f:
+                    combined_texts.append(f"--- {entry.name} ---\n{f.read()}\n\n")
                 
     if not combined_texts:
         return
@@ -170,13 +183,14 @@ def create_zip_archive():
     
     try:
         with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # 1. 개별 분석 결과 마크다운 및 SVG 다이어그램 폴더 포함
-            for root, _, files in os.walk(RESULT_DIR):
-                for file in files:
-                    arcname = os.path.relpath(os.path.join(root, file), ".")
-                    zipf.write(os.path.join(root, file), arcname)
+            # 1. 개별 분석 결과 마크다운 및 SVG 다이어그램 포함 (os.walk 대신 os.scandir 사용으로 속도 최적화)
+            with os.scandir(RESULT_DIR) as it:
+                for entry in it:
+                    if entry.is_file():
+                        arcname = os.path.relpath(entry.path, ".")
+                        zipf.write(entry.path, arcname)
             # 2. 루트 디렉토리의 생성된 리포트 및 로그 파일들 포함
-            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "error.log", "skipped_files.log"]:
+            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "domain_table_mapping.csv", "service_dependencies.csv", "api_endpoints.csv", "error.log", "skipped_files.log"]:
                 if os.path.exists(report):
                     zipf.write(report)
         print(f"✨ 압축 완료: {zip_filename} (이 파일을 팀원들과 공유하세요!)")
@@ -187,12 +201,12 @@ def create_zip_archive():
 def main():
     print(f"소스 코드 디렉토리 '{SOURCE_DIRECTORY}'에서 분석을 시작합니다...\n")
     
-    target_files = get_target_files(SOURCE_DIRECTORY)
+    target_files = get_target_files(SOURCE_DIRECTORY, exclude_paths=EXCLUDE_PATHS)
     if not target_files:
-        print("분석할 .java 또는 .xml 파일이 존재하지 않습니다. 경로를 확인해주세요.")
+        print("분석할 .java, .xml, .sql 파일이 존재하지 않습니다. 경로를 확인해주세요.")
         return
 
-    print(f"총 {len(target_files)}개의 분석 대상(Java, XML) 파일을 찾았습니다.\n")
+    print(f"총 {len(target_files)}개의 분석 대상(Java, XML, SQL) 파일을 찾았습니다.\n")
 
     print(f"[{LLM_MAX_WORKERS}]개의 워커(Worker)로 병렬 분석을 시작합니다...\n")
 
@@ -270,6 +284,9 @@ def main():
     # HTML/PDF 리포트 및 통합 마크다운 문서 생성
     generate_report.main(stats)
     merge_reports.main()
+    
+    # 도메인-테이블 및 서비스 의존성 CSV 통합 추출
+    extract_csv.main()
     
     # 모든 결과물을 ZIP으로 압축
     create_zip_archive()

@@ -86,14 +86,16 @@ def main(stats=None):
             summary_content = f.read()
 
     # 생성된 .md 파일들을 읽어서 리스트에 추가
-    for file_name in sorted(os.listdir(RESULT_DIR)):
-        if file_name.endswith(".md") and file_name != "_architecture_summary.md":
-            file_path = os.path.join(RESULT_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f:
-                reports.append({
-                    "name": file_name,
-                    "content": f.read()
-                })
+    # os.listdir 대신 os.scandir를 사용하여 메모리 오버헤드 방지
+    with os.scandir(RESULT_DIR) as it:
+        entries = [entry for entry in it if entry.is_file() and entry.name.endswith(".md") and entry.name != "_architecture_summary.md"]
+    
+    for entry in sorted(entries, key=lambda e: e.name):
+        with open(entry.path, "r", encoding="utf-8") as f:
+            reports.append({
+                "name": entry.name,
+                "content": f.read()
+            })
 
     if not reports:
         print("생성된 Markdown 리포트 파일이 없습니다.")
