@@ -1,12 +1,14 @@
 import os
 import csv
+from typing import Iterable, List
 
 RESULT_DIR = "./analysis_results"
 MAPPING_CSV = "domain_table_mapping.csv"
 DEPENDENCY_CSV = "service_dependencies.csv"
 ENDPOINT_CSV = "api_endpoints.csv"
 
-def extract_markdown_tables(lines_iterable):
+
+def extract_markdown_tables(lines_iterable: Iterable[str]) -> List[List[str]]:
     """파일 객체 등 순회 가능한(Iterable) 라인 묶음에서 표 데이터를 메모리 효율적으로(Lazy) 추출합니다."""
     tables = []
     current_table = []
@@ -22,7 +24,8 @@ def extract_markdown_tables(lines_iterable):
         tables.append(current_table)
     return tables
 
-def main():
+
+def main() -> None:
     if not os.path.exists(RESULT_DIR):
         return
 
@@ -61,22 +64,29 @@ def main():
                     if is_mapping or is_dependency or is_endpoint:
                         for data_row in table[2:]:
                             cells = [cell.strip() for cell in data_row.split('|')[1:-1]]
-                            if not any(cells): continue
+                            if not any(cells):
+                                continue
                                 
                             if is_mapping:
                                 normalized_cells = cells[:5]  # Type, Object Name, Domain, Aggregate Root, Migration Priority (5개 추출)
-                                if len(cells) > 5: normalized_cells.append(" / ".join(cells[5:])) # 나머지는 Description에 병합
-                                else: normalized_cells.extend([""] * (6 - len(cells))) # 부족한 열 채우기
+                                if len(cells) > 5:
+                                    normalized_cells.append(" / ".join(cells[5:])) # 나머지는 Description에 병합
+                                else:
+                                    normalized_cells.extend([""] * (6 - len(cells))) # 부족한 열 채우기
                                 all_mappings.append([file_name] + normalized_cells)
                             elif is_dependency:
                                 normalized_cells = cells[:3]
-                                if len(cells) > 3: normalized_cells.append(" / ".join(cells[3:]))
-                                else: normalized_cells.extend([""] * (3 - len(cells)))
+                                if len(cells) > 3:
+                                    normalized_cells.append(" / ".join(cells[3:]))
+                                else:
+                                    normalized_cells.extend([""] * (3 - len(cells)))
                                 all_dependencies.append([file_name] + normalized_cells)
                             elif is_endpoint:
                                 normalized_cells = cells[:3]
-                                if len(cells) > 3: normalized_cells.append(" / ".join(cells[3:]))
-                                else: normalized_cells.extend([""] * (3 - len(cells)))
+                                if len(cells) > 3:
+                                    normalized_cells.append(" / ".join(cells[3:]))
+                                else:
+                                    normalized_cells.extend([""] * (3 - len(cells)))
                                 all_endpoints.append([file_name] + normalized_cells)
 
     # 엑셀에서 분석하기 편하도록 데이터 정렬(Sorting) 최적화

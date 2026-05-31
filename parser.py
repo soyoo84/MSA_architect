@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+from typing import List, Optional
 
 # XML 태그 분할용 정규식을 모듈 레벨에서 한 번만 컴파일하여 반복 호출 시 CPU 부하 감소
 XML_TAG_PATTERN = re.compile(r'^\s*<(select|insert|update|delete|sql|resultMap)\b', re.IGNORECASE)
@@ -19,7 +20,8 @@ except ImportError:
     HAS_JAVALANG = False
     logging.warning("javalang 패키지가 없습니다. 단순 라인 단위로 분할합니다.")
 
-def get_target_files(directory, exclude_paths=None):
+
+def get_target_files(directory: str, exclude_paths: Optional[List[str]] = None) -> List[str]:
     """지정된 경로 하위의 모든 대상 파일의 절대 경로를 수집하며, 특정 경로는 제외합니다."""
     target_files = []
     if exclude_paths is None:
@@ -45,7 +47,8 @@ def get_target_files(directory, exclude_paths=None):
     scan_dir(directory)
     return target_files
 
-def chunk_java_code(source_code, max_lines=1500):
+
+def chunk_java_code(source_code: str, max_lines: int = 1500) -> List[str]:
     """javalang을 활용하여 Java 코드를 클래스 필드와 메서드 경계 단위로 잘게 쪼갭니다."""
     if not HAS_JAVALANG:
         lines = source_code.split('\n')
@@ -90,7 +93,8 @@ def chunk_java_code(source_code, max_lines=1500):
         lines = source_code.split('\n')
         return ['\n'.join(lines[i:i+max_lines]) for i in range(0, len(lines), max_lines)]
 
-def chunk_xml_code(source_code, max_lines=1500):
+
+def chunk_xml_code(source_code: str, max_lines: int = 1500) -> List[str]:
     """MyBatis XML 코드를 주요 태그(<select>, <insert> 등) 경계 단위로 잘게 쪼갭니다."""
     lines = source_code.split('\n')
     statement_start_lines = []
@@ -124,7 +128,8 @@ def chunk_xml_code(source_code, max_lines=1500):
         
     return chunks
 
-def extract_sql_object_names(source_code):
+
+def extract_sql_object_names(source_code: str) -> List[str]:
     """SQL DDL 코드에서 생성되거나 변경되는 전체 테이블/객체명 목록을 추출합니다."""
     matches = SQL_OBJECT_PATTERN.findall(source_code)
     
@@ -134,7 +139,8 @@ def extract_sql_object_names(source_code):
     # 파이썬 3.7+ dict를 활용하여 순서 유지 및 중복 제거 O(N) 최적화 적용
     return list(dict.fromkeys(filter(None, names)))
 
-def chunk_sql_code(source_code, max_lines=1500):
+
+def chunk_sql_code(source_code: str, max_lines: int = 1500) -> List[str]:
     """SQL DDL 코드를 주요 구문(CREATE TABLE/VIEW/PROCEDURE/FUNCTION/TRIGGER/INDEX, ALTER TABLE 등) 경계 단위로 잘게 쪼갭니다."""
     lines = source_code.split('\n')
     statement_start_lines = []

@@ -9,7 +9,7 @@ RESULT_DIR = "./analysis_results"
 # 다이어그램 정규식을 모듈 레벨에서 한 번만 컴파일
 DOT_PATTERN = re.compile(r'```(?:dot|graphviz)\n(.*?)```', re.DOTALL)
 
-def render_graphviz_to_svg(markdown_text, file_prefix):
+def render_graphviz_to_svg(markdown_text: str, file_prefix: str) -> str:
     """마크다운 내의 dot/graphviz 코드 블록을 추출하여 로컬에서 SVG 이미지로 렌더링합니다."""
     try:
         def replacer(match):

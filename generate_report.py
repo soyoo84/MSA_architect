@@ -3,6 +3,7 @@ import markdown
 import pdfkit
 import logging
 from datetime import datetime
+from typing import List, Dict, Optional, Any
 from jinja2 import Environment, FileSystemLoader
 from config import SOURCE_DIRECTORY
 
@@ -15,7 +16,8 @@ PDF_OUTPUT_FILE = "msa_analysis_report.pdf"
 # 본인의 실제 설치 경로에 맞게 수정해주세요. (예: Mac/Linux의 경우 '/usr/local/bin/wkhtmltopdf')
 WKHTMLTOPDF_PATH = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
 
-def generate_pdf(reports, summary_content):
+
+def generate_pdf(reports: List[Dict[str, str]], summary_content: str) -> None:
     """마크다운 결과물들을 모아 하나의 정적 PDF 파일로 추출합니다."""
     print("PDF 리포트를 생성하는 중입니다 (시간이 다소 소요될 수 있습니다)...")
     
@@ -70,7 +72,8 @@ def generate_pdf(reports, summary_content):
         print(f"\n[⚠️ PDF 생성 실패] wkhtmltopdf 경로가 올바른지 확인해주세요. ({WKHTMLTOPDF_PATH})\n상세 오류: {e}\n")
         logging.error(f"PDF 리포트 생성 실패: {e}", exc_info=True)
 
-def main(stats=None):
+
+def main(stats: Optional[Dict[str, Any]] = None) -> None:
     if stats is None:
         stats = {}
     if not os.path.exists(RESULT_DIR):

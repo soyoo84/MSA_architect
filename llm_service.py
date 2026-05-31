@@ -1,13 +1,16 @@
 import openai
+from typing import Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from tqdm import tqdm
 from config import llm_client, LLM_MODEL_NAME
 
-def log_retry_to_terminal(retry_state):
+
+def log_retry_to_terminal(retry_state: Any) -> None:
     """재시도 발생 시 터미널(tqdm)에 원인 에러와 대기 시간을 출력합니다."""
     exc = retry_state.outcome.exception()
     wait_time = retry_state.next_action.sleep
     tqdm.write(f"⚠️ [API 재시도] {type(exc).__name__} 발생: {exc} -> {wait_time}초 후 다시 시도합니다.")
+
 
 @retry(
     stop=stop_after_attempt(5), 
@@ -21,7 +24,7 @@ def log_retry_to_terminal(retry_state):
     before_sleep=log_retry_to_terminal,
     reraise=True
 )
-async def analyze_with_qwen(source_code, is_chunk=False, chunk_info="", file_name="", global_context=""):
+async def analyze_with_qwen(source_code: str, is_chunk: bool = False, chunk_info: str = "", file_name: str = "", global_context: str = "") -> str:
     """
     Qwen 모델(OpenAI 호환)을 사용하여 코드 분석을 요청합니다.
     Timeout, 500 내부 서버 오류, Rate Limit 등의 예외 발생 시 tenacity 패키지를 통해 최대 5번 지수 백오프 재시도를 합니다.
@@ -99,6 +102,7 @@ async def analyze_with_qwen(source_code, is_chunk=False, chunk_info="", file_nam
     
     return response.choices[0].message.content
 
+
 @retry(
     stop=stop_after_attempt(5), 
     wait=wait_exponential(multiplier=2, min=5, max=60),
@@ -111,7 +115,7 @@ async def analyze_with_qwen(source_code, is_chunk=False, chunk_info="", file_nam
     before_sleep=log_retry_to_terminal,
     reraise=True
 )
-async def summarize_chunks_with_qwen(chunk_results_text, file_name):
+async def summarize_chunks_with_qwen(chunk_results_text: str, file_name: str) -> str:
     """분할 분석된 청크 결과들을 하나로 병합(Reduce)하여 최종 요약 리포트를 생성합니다."""
     if len(chunk_results_text) > 40000:
         chunk_results_text = chunk_results_text[:40000] + "\n\n... (중략: 토큰 보호를 위해 잘림) ..."
@@ -141,7 +145,8 @@ async def summarize_chunks_with_qwen(chunk_results_text, file_name):
     )
     return response.choices[0].message.content
 
-async def generate_summary_with_qwen(combined_text):
+
+async def generate_summary_with_qwen(combined_text: str) -> str:
     """전체 파일들의 분석 결과를 종합하여 최종 요약 아키텍처 가이드를 생성합니다."""
     prompt = f"""
     당신은 수석 MSA 아키텍트입니다. 다음은 기존 모놀리식 시스템의 각 파일별 MSA 분석 리포트들입니다.

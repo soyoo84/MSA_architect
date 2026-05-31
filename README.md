@@ -16,7 +16,7 @@
   - 지수 백오프(Exponential Backoff) 재시도
   - 파일 락(File Lock) 기반 안전한 동시성 로깅
   - LLM 서버 크래시(OOM) 및 무한 대기(Deadlock) 타임아웃 감지 및 워커 자동 교체
-- **시각화 및 산출물 자동화 (Reporting)**: Graphviz를 이용한 의존성 다이어그램(SVG) 로컬 렌더링을 지원하며, 분석이 끝나면 HTML, PDF, 통합 Markdown 리포트를 생성하고 **자동으로 ZIP 파일로 압축**하여 공유를 돕습니다.
+- **시각화 및 산출물 자동화 (Reporting)**: Graphviz 의존성 다이어그램(SVG) 로컬 렌더링을 지원하며, 분석이 끝나면 HTML/PDF/MD 리포트, CSV 데이터 추출, OpenAPI(Swagger) 명세서 등을 자동 생성하고 **ZIP 파일로 압축**하여 공유를 돕습니다.
 - **스마트 복구 시스템 (Recovery)**: 서버 다운이나 타임아웃으로 실패한 파일들만 쏙쏙 골라내어 재시도하는 복구 스크립트(`retry_server_errors.py`)를 제공합니다.
 
 ---
@@ -46,6 +46,7 @@ graph TD
     subgraph Output [산출물 생성]
         DIAGRAM[📊 Graphviz SVG <br/> diagram.py]
         REPORT[📄 HTML / PDF / MD <br/> generate_report.py]
+        CSV[📑 CSV / Swagger <br/> extract_csv, generate_swagger]
         ZIP[📦 msa_analysis_output.zip]
     end
 
@@ -62,6 +63,8 @@ graph TD
     LLM_SVC --> REDUCE
     REDUCE --> DIAGRAM
     DIAGRAM --> REPORT
+    REPORT --> CSV
+    CSV --> ZIP
     REPORT --> ZIP
 ```
 

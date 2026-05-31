@@ -3,6 +3,7 @@ import concurrent.futures
 import asyncio
 import logging
 import openai
+from typing import Dict, Any
 from tqdm import tqdm
 from pebble import ProcessPool
 
@@ -14,6 +15,7 @@ from diagram import render_graphviz_to_svg
 import generate_report
 import merge_reports
 import extract_csv
+import generate_swagger
 import zipfile
 
 RESULT_DIR = "./analysis_results"
@@ -21,7 +23,8 @@ RESULT_DIR = "./analysis_results"
 # 분석 결과를 저장할 디렉토리 생성
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-def process_file(file_path):
+
+def process_file(file_path: str) -> str:
     """단일 파일을 분석하고 결과를 저장하는 워커 함수입니다."""
     # 1. 파일 이름 충돌 방지: 패키지(디렉토리) 경로를 언더스코어로 결합하여 고유한 파일명 생성 (예: src_main_java_User.java)
     rel_path = os.path.relpath(file_path, SOURCE_DIRECTORY)
@@ -136,7 +139,8 @@ def process_file(file_path):
     else:
         return f"[SUCCESS] 분석 완료: {file_name}"
 
-def generate_architecture_summary():
+
+def generate_architecture_summary() -> None:
     """모든 개별 분석 결과를 모아 하나의 전체 요약 아키텍처 가이드를 생성합니다."""
     summary_file = os.path.join(RESULT_DIR, "_architecture_summary.md")
     
@@ -176,7 +180,8 @@ def generate_architecture_summary():
         print(f"[ERROR] 요약 가이드 생성 중 오류 발생: {e}")
         logging.error("전체 요약 아키텍처 가이드 생성 중 오류 발생", exc_info=True)
 
-def create_zip_archive():
+
+def create_zip_archive() -> None:
     """최종 분석 결과물과 리포트 파일들을 팀원 공유용 ZIP 파일로 압축합니다."""
     zip_filename = "msa_analysis_output.zip"
     print(f"\n최종 결과물들을 팀원 공유용 파일({zip_filename})로 압축합니다...")
@@ -190,7 +195,7 @@ def create_zip_archive():
                         arcname = os.path.relpath(entry.path, ".")
                         zipf.write(entry.path, arcname)
             # 2. 루트 디렉토리의 생성된 리포트 및 로그 파일들 포함
-            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "domain_table_mapping.csv", "service_dependencies.csv", "api_endpoints.csv", "error.log", "skipped_files.log"]:
+            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "domain_table_mapping.csv", "service_dependencies.csv", "api_endpoints.csv", "swagger.json", "error.log", "skipped_files.log"]:
                 if os.path.exists(report):
                     zipf.write(report)
         print(f"✨ 압축 완료: {zip_filename} (이 파일을 팀원들과 공유하세요!)")
@@ -198,7 +203,8 @@ def create_zip_archive():
         print(f"[ERROR] ZIP 압축 중 오류 발생: {e}")
         logging.error("ZIP 파일 생성 중 오류 발생", exc_info=True)
 
-def main():
+
+def main() -> None:
     print(f"소스 코드 디렉토리 '{SOURCE_DIRECTORY}'에서 분석을 시작합니다...\n")
     
     target_files = get_target_files(SOURCE_DIRECTORY, exclude_paths=EXCLUDE_PATHS)
@@ -287,6 +293,9 @@ def main():
     
     # 도메인-테이블 및 서비스 의존성 CSV 통합 추출
     extract_csv.main()
+    
+    # API 엔드포인트로 Swagger 파일 자동 생성
+    generate_swagger.main()
     
     # 모든 결과물을 ZIP으로 압축
     create_zip_archive()

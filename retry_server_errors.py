@@ -11,6 +11,7 @@ from main import process_file, generate_architecture_summary, create_zip_archive
 import generate_report
 import merge_reports
 import extract_csv
+import generate_swagger
 
 LOG_FILE = "skipped_files.log"
 
@@ -77,6 +78,7 @@ def main():
     generate_report.main()
     merge_reports.main()
     extract_csv.main()
+    generate_swagger.main()
     create_zip_archive()
     print("✨ 리포트 갱신 및 ZIP 압축이 모두 완료되었습니다!")
 
