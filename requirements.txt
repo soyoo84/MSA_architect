@@ -1,0 +1,32 @@
+# 사내 LLM (Qwen 등 오픈소스 기반) 연동을 위한 OpenAI 호환 패키지
+openai>=1.12.0
+
+# API Rate Limit 및 예외 처리를 위한 강력한 재시도(지수 백오프) 라이브러리
+tenacity>=8.2.0
+
+# LLM_API_KEY 등의 환경변수를 .env 파일에서 쉽게 로드하기 위한 패키지
+python-dotenv>=1.0.0
+
+# 최종 MSA 분석 리포트를 깔끔한 Markdown 형태로 생성하기 위한 템플릿 엔진
+jinja2>=3.1.2
+
+# 콘솔 진행률 표시(Progress Bar)를 위한 라이브러리
+tqdm>=4.65.0
+
+# 로컬 환경에서 다이어그램(Graphviz) SVG 렌더링을 위한 라이브러리
+graphviz>=0.20.1
+
+# Markdown을 HTML로 변환하기 위한 파이썬 라이브러리 (PDF 생성용)
+markdown>=3.5.2
+
+# HTML을 PDF로 변환하기 위한 라이브러리 (OS에 wkhtmltopdf 설치 필요)
+pdfkit>=1.0.0
+
+# 대용량 Java 파일의 AST 구문 분석 및 청크(메서드 단위) 분할을 위한 라이브러리
+javalang>=0.13.0
+
+# 멀티 프로세싱 환경에서 로그 파일(error.log) 동시 쓰기 꼬임을 방지하는 라이브러리
+concurrent-log-handler>=0.9.24
+
+# ProcessPool의 개별 작업 타임아웃 제어 및 좀비 프로세스 방지를 위한 라이브러리
+Pebble>=5.0.3

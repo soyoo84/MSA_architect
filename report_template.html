@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSA Analysis Report</title>
+    <!-- GitHub 마크다운 스타일 CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 350px; background-color: #f6f8fa; border-right: 1px solid #d0d7de; overflow-y: auto; display: flex; flex-direction: column; }
+        #sidebar-header { padding: 20px; border-bottom: 1px solid #d0d7de; background-color: #fff; }
+        #sidebar-header h2 { margin: 0; font-size: 1.1rem; }
+        #search-input { width: 100%; box-sizing: border-box; margin-top: 15px; padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; outline: none; font-size: 0.9rem; }
+        #search-input:focus { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,0.3); }
+        #tabs { display: flex; background-color: #fff; border-bottom: 1px solid #d0d7de; }
+        .tab-button { flex: 1; padding: 10px 0; border: none; background: none; border-bottom: 2px solid transparent; cursor: pointer; font-size: 0.9rem; color: #57606a; outline: none; }
+        .tab-button:hover { background-color: #f3f4f6; }
+        .tab-button.active { font-weight: bold; color: #24292f; border-bottom-color: #0969da; }
+        #file-list { list-style: none; padding: 0; margin: 0; }
+        #file-list li { padding: 12px 20px; border-bottom: 1px solid #e1e4e8; cursor: pointer; font-size: 0.9rem; word-break: break-all; }
+        #file-list li:hover { background-color: #eaecef; }
+        #file-list li.active { background-color: #0969da; color: #fff; font-weight: bold; }
+        #content { flex-grow: 1; padding: 40px; overflow-y: auto; background-color: #fff; }
+        .placeholder { color: #6e7781; text-align: center; margin-top: 20%; font-size: 1.1rem; }
+        
+        /* 코드 블록 복사 버튼 스타일 */
+        .markdown-body pre { position: relative; }
+        .copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            color: #57606a;
+            background-color: #f6f8fa;
+            border: 1px solid rgba(27, 31, 36, 0.15);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .copy-button:hover { background-color: #f3f4f6; color: #24292f; }
+        
+        /* 이미지 확대 팝업(모달) 스타일 */
+        #image-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); align-items: center; justify-content: center; }
+        #image-modal img { max-width: 95%; max-height: 95%; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        #image-modal .close-btn { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; font-weight: bold; cursor: pointer; transition: color 0.2s; }
+        #image-modal .close-btn:hover { color: #ccc; }
+    </style>
+    <!-- Markdown 변환을 위한 marked.js 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h2>📁 분석 완료 파일 ({{ reports|length }}개)</h2>
+            <div style="font-size: 0.8rem; color: #57606a; margin-top: 10px; margin-bottom: 5px; word-break: break-all;">
+                <strong>📅 일시:</strong> {{ analysis_date }}<br>
+                <strong>📂 경로:</strong> {{ source_directory }}
+            </div>
+            {% if stats %}
+            <div style="font-size: 0.8rem; background-color: #f6f8fa; padding: 10px; border-radius: 6px; border: 1px solid #d0d7de; margin-bottom: 10px;">
+                <strong style="color: #24292f;">📊 분석 통계 (성공률: {{ stats.rate }}%)</strong><br>
+                <div style="margin-top: 5px;">
+                    전체: {{ stats.total }} | <span style="color:#2da44e; font-weight:bold;">성공: {{ stats.success }}</span> | <span style="color:#8c959f;">스킵: {{ stats.skip }}</span> | <span style="color:#cf222e;">실패: {{ stats.error }}</span>
+                </div>
+            </div>
+            {% endif %}
+            {% if summary_content %}
+            <button onclick="showSummary()" style="width: 100%; margin-top: 10px; padding: 8px; background-color: #2da44e; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">🌟 전체 요약 아키텍처 보기</button>
+            {% endif %}
+            <input type="text" id="search-input" placeholder="키워드 검색 (예: 트랜잭션, 강결합)..." onkeyup="filterReports()">
+        </div>
+        <div id="tabs">
+            <button class="tab-button active" onclick="filterByTab('all', this)">All</button>
+            <button class="tab-button" onclick="filterByTab('java', this)">Java</button>
+            <button class="tab-button" onclick="filterByTab('xml', this)">XML</button>
+        </div>
+        <ul id="file-list">
+            {% for report in reports %}
+            <li id="menu-{{ loop.index }}" onclick="showContent('{{ loop.index }}')">{{ report.name }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div id="content">
+        <div id="report-view" class="markdown-body">
+            {% if summary_content %}
+            <textarea id="summary-md" style="display:none;">{{ summary_content }}</textarea>
+            {% else %}
+                <div class="placeholder">
+                    <h2>MSA 전환 분석 리포트</h2>
+                    <p>좌측 사이드바에서 파일을 선택하여 상세 분석 결과를 확인하세요.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 이미지 확대 팝업 모달 -->
+    <div id="image-modal" onclick="closeModal()">
+        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <img id="modal-img" src="" alt="확대된 다이어그램" onclick="event.stopPropagation()"> <!-- 이미지 클릭 시 모달이 닫히지 않도록 이벤트 전파 중단 -->
+    </div>
+
+    <!-- 마크다운 원본 데이터를 숨겨진 textarea에 보관 (개행 문자 보존을 위해) -->
+    <div style="display: none;">
+        {% for report in reports %}
+        <textarea id="md-{{ loop.index }}">{{ report.content | escape }}</textarea>
+        {% endfor %}
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const summaryEl = document.getElementById('summary-md');
+            if (summaryEl) {
+                document.getElementById('report-view').innerHTML = marked.parse(summaryEl.value);
+                addCopyButtons();
+                addImageClickListeners();
+            }
+        });
+
+        function showSummary() {
+            document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
+            const summaryEl = document.getElementById('summary-md');
+            if (summaryEl) {
+                document.getElementById('report-view').innerHTML = marked.parse(summaryEl.value);
+                document.getElementById('content').scrollTop = 0;
+                addCopyButtons();
+                addImageClickListeners();
+            }
+        }
+
+        function showContent(index) {
+            document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
+            document.getElementById('menu-' + index).classList.add('active');
+            const mdContent = document.getElementById('md-' + index).value;
+            document.getElementById('report-view').innerHTML = marked.parse(mdContent);
+            document.getElementById('content').scrollTop = 0;
+            addCopyButtons();
+            addImageClickListeners();
+        }
+
+        function addImageClickListeners() {
+            document.querySelectorAll('#report-view img').forEach(img => {
+                img.style.cursor = 'zoom-in';
+                img.title = '클릭하여 크게 보기';
+                img.addEventListener('click', function() {
+                    document.getElementById('image-modal').style.display = 'flex';
+                    document.getElementById('modal-img').src = this.src;
+                });
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('image-modal').style.display = 'none';
+        }
+        
+        document.addEventListener('keydown', function(event) {
+            if (event.key === "Escape") {
+                closeModal();
+            }
+        });
+
+        function addCopyButtons() {
+            document.querySelectorAll('#report-view pre').forEach(pre => {
+                if (pre.querySelector('.copy-button')) return; // 중복 생성 방지
+                const button = document.createElement('button');
+                button.className = 'copy-button';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const codeText = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+                    navigator.clipboard.writeText(codeText).then(() => {
+                        button.textContent = 'Copied!';
+                        setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+                    }).catch(err => {
+                        console.error('클립보드 복사 실패:', err);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        }
+
+        let currentTab = 'all';
+
+        function filterByTab(tabName, element) {
+            currentTab = tabName;
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            filterReports();
+        }
+
+        function filterReports() {
+            const keyword = document.getElementById('search-input').value.toLowerCase();
+            const listItems = document.querySelectorAll('#file-list li');
+            
+            listItems.forEach((li, index) => {
+                const mdContent = document.getElementById('md-' + (index + 1)).value.toLowerCase();
+                const fileName = li.textContent.toLowerCase();
+                
+                let matchesTab = true;
+                if (currentTab === 'java') {
+                    matchesTab = fileName.includes('.java');
+                } else if (currentTab === 'xml') {
+                    matchesTab = fileName.includes('.xml');
+                }
+                
+                if (matchesTab && (mdContent.includes(keyword) || fileName.includes(keyword))) {
+                    li.style.display = '';
+                } else {
+                    li.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
