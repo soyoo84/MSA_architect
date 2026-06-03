@@ -4,155 +4,122 @@
 ![OpenAI](https://img.shields.io/badge/LLM-Qwen_3.5_(OpenAI_API)-412991?logo=openai&logoColor=white)
 ![Asyncio](https://img.shields.io/badge/Architecture-Asyncio_%2B_Multiprocessing-FFca28)
 
-## 📖 소개 (About the Project)
-본 프로젝트는 방대한 모놀리식(Monolithic) 시스템의 소스 코드(Java, XML)를 자동으로 분석하여 **마이크로서비스 아키텍처(MSA) 전환을 위한 도메인 설계도와 리팩토링 가이드를 제공하는 엔터프라이즈급 AI 자동화 파이프라인**입니다. 
+## 📖 프로젝트 소개 (About the Project)
+**Legacy-to-MSA Automator**는 방대한 레거시 모놀리식(Monolithic) 시스템의 소스 코드(Java, XML)와 데이터베이스 스키마(DDL)를 AI가 자동으로 분석하여, **마이크로서비스 아키텍처(MSA) 전환을 위한 도메인 설계도와 물리적 분리 가이드를 제공하는 엔터프라이즈급 AI 자동화 파이프라인**입니다.
 
-단순한 API 호출 스크립트를 넘어, 대규모 파일을 분석하기 위한 **AST 기반 지능형 청킹(Chunking)**, 속도 극대화를 위한 **멀티프로세싱 + 비동기(Async) 하이브리드 아키텍처**, 그리고 사내 LLM 서버의 VRAM OOM(메모리 초과) 현상을 방어하는 **강력한 자동 복구 및 타임아웃 제어 로직**이 탑재되어 있습니다.
-
-## ✨ 주요 기능 (Features)
-- **AST & 정규식 기반 지능형 파일 분할 (Chunking)**: 3,000줄이 넘는 대용량 파일도 토큰 초과 오류 없이 Java 메서드 단위, XML 쿼리 태그 단위로 쪼개어 분석 후 Map-Reduce 방식으로 병합합니다.
-- **하이브리드 병렬 처리 (Performance)**: `Pebble` 프로세스 풀로 CPU 바운드 작업을 분산하고, 분할된 청크들은 `asyncio.gather`를 통해 비동기로 동시 호출하여 분석 속도를 극대화합니다.
-- **강력한 무결점 방어 로직 (Resilience)**: 
-  - 지수 백오프(Exponential Backoff) 재시도
-  - 파일 락(File Lock) 기반 안전한 동시성 로깅
-  - LLM 서버 크래시(OOM) 및 무한 대기(Deadlock) 타임아웃 감지 및 워커 자동 교체
-- **시각화 및 산출물 자동화 (Reporting)**: Graphviz 의존성 다이어그램(SVG) 로컬 렌더링을 지원하며, 분석이 끝나면 HTML/PDF/MD 리포트, CSV 데이터 추출, OpenAPI(Swagger) 명세서 등을 자동 생성하고 **ZIP 파일로 압축**하여 공유를 돕습니다.
-- **스마트 복구 시스템 (Recovery)**: 서버 다운이나 타임아웃으로 실패한 파일들만 쏙쏙 골라내어 재시도하는 복구 스크립트(`retry_server_errors.py`)를 제공합니다.
+이 도구는 단순한 코드 분석을 넘어 다음과 같은 심층적인 아키텍처 가이드를 제공합니다:
+- **도메인 주도 설계(DDD) 기반 Bounded Context 정의**: 비즈니스 프로세스(LV1~LV5)에 따라 코드를 분류하고 Aggregate Root를 식별합니다.
+- **물리적 DB 분리 및 정합성 전략**: MSA의 핵심인 데이터베이스의 물리적 분리를 위해 FK(외래 키) 단절 전략을 제시하고, Saga 패턴 및 트랜잭셔널 아웃박스(Transactional Outbox) 등을 활용한 데이터 정합성 보장 방안을 가이드합니다.
+- **UML 표준 시각화**: 텍스트 형태의 요약을 넘어, 추출된 Bounded Context 내의 엔티티(Entity) 및 연관관계를 **UML 클래스 다이어그램** 형태로 브라우저에서 바로 확인할 수 있도록 자동 시각화(Mermaid.js)합니다.
 
 ---
 
-## 🏗️ 시스템 아키텍처 (System Architecture)
+## ✨ 핵심 파이프라인 프로세스 (How it Works)
 
-```mermaid
-graph TD
-    subgraph Input [입력]
-        SRC[📂 Local Source Code <br/> .java, .xml]
-        ENV[⚙️ .env Config]
-    end
+본 프로그램은 사용자가 실행 버튼을 누르는 순간부터 결과물을 압축하기까지 다음과 같은 고도화된 체계(Map-Reduce)로 작동합니다.
 
-    subgraph Core_Pipeline [Core Pipeline : main.py]
-        PARSER[✂️ Parser & Chunker <br/> parser.py]
-        WORKER[⚙️ ProcessPool Worker <br/> Pebble]
-        LLM_SVC[🧠 Async LLM Service <br/> llm_service.py]
-        REDUCE[📝 Map-Reduce <br/> Summarizer]
-    end
-
-    subgraph Resilience [장애 복구 및 로깅]
-        RETRY[🔄 Tenacity Retry]
-        LOGS[📋 error.log / skipped.log]
-        RECOVERY[🚑 Recovery Script <br/> retry_server_errors.py]
-    end
-
-    subgraph Output [산출물 생성]
-        DIAGRAM[📊 Graphviz SVG <br/> diagram.py]
-        REPORT[📄 HTML / PDF / MD <br/> generate_report.py]
-        CSV[📑 CSV / Swagger <br/> extract_csv, generate_swagger]
-        ZIP[📦 msa_analysis_output.zip]
-    end
-
-    SRC --> PARSER
-    ENV --> PARSER
-    PARSER -- AST / Regex 분할 --> WORKER
-    WORKER -- asyncio 동시 호출 --> LLM_SVC
-    LLM_SVC -- OpenAI API --> QWEN[(사내 LLM Server)]
-    QWEN --> LLM_SVC
-    LLM_SVC -- 오류/Rate Limit --> RETRY
-    LLM_SVC -- OOM / 타임아웃 --> LOGS
-    LOGS -.-> RECOVERY
-    RECOVERY -.-> WORKER
-    LLM_SVC --> REDUCE
-    REDUCE --> DIAGRAM
-    DIAGRAM --> REPORT
-    REPORT --> CSV
-    CSV --> ZIP
-    REPORT --> ZIP
-```
+1. **지능형 파일 청킹 (Parser & Chunker)**
+   * 수천 줄이 넘는 Java 코드나 XML 매퍼, 거대한 DDL 파일을 그대로 LLM에 던지면 컨텍스트 한도 초과(OOM)가 발생합니다.
+   * `parser.py`가 AST(추상 구문 트리)와 정규식을 이용해 Java는 '메서드' 단위로, XML은 '쿼리 태그' 단위로, DDL은 '테이블' 단위로 쪼개어(Chunking) 토큰 오버플로우를 원천 차단합니다.
+2. **하이브리드 병렬 LLM 분석 (Map)**
+   * `main.py`는 `Pebble` 멀티프로세싱을 통해 파일 단위로 CPU 워커를 띄우고, 각 파일 내의 잘게 쪼개진 청크(Chunk)들은 `asyncio`를 통해 비동기로 사내 LLM에 동시 전송됩니다.
+   * 네트워크 병목을 최소화하여 분석 속도를 극대화합니다.
+3. **토큰 압축 병합 (Reduce)**
+   * 분석된 파편화 조각들을 모아 해당 파일의 단일 마크다운 리포트로 통합합니다.
+   * **글로벌 요약 최적화**: 1,700여 개가 넘는 대규모 파일을 전체 요약할 때 텍스트를 무식하게 합치지 않습니다. 개별 파일에서 도출된 정보(프로세스 레벨, 도메인, Aggregate Root)를 **CSV 형태(`domain_table_mapping.csv`)로 먼저 추출한 뒤, 트리 맵 형태로 극도로 압축**하여 LLM에 전달합니다. 이를 통해 초대규모 프로젝트도 거시적인 MSA 글로벌 요약 다이어그램을 성공적으로 그려냅니다.
+4. **산출물 및 시각화 자동화 (Reporting)**
+   * 생성된 마크다운을 하나로 합치고(`merge_reports.py`), 웹 브라우저에서 UML 클래스 다이어그램을 인터랙티브하게 볼 수 있는 HTML 리포트(`generate_report.py`)를 렌더링합니다.
+   * 분석된 API 엔드포인트를 모아 Swagger 규격 파일(`generate_swagger.py`)까지 만들어 낸 후, 이 모든 것을 `msa_analysis_output.zip`으로 압축합니다.
 
 ---
 
-## ⚙️ 시스템 요구 사항 (Prerequisites)
+## 🚀 처음 오신 분들을 위한 시작 가이드 (Getting Started)
 
-파이썬 패키지 외에, 로컬 PC나 서버의 **운영체제(OS) 레벨에 반드시 설치되어야 하는 필수 프로그램**입니다.
+처음 파이썬 프로그램을 다루시는 분들도 쉽게 따라 하실 수 있도록 구성했습니다.
 
-- Python 3.9 이상
-- **Graphviz**: 아키텍처 다이어그램 로컬 렌더링용 (※ 설치 시 반드시 `Add Graphviz to the system PATH` 체크)
-- **wkhtmltopdf**: HTML을 PDF 리포트로 변환하기 위한 엔진 (설치 후 환경변수 PATH 추가 또는 `generate_report.py` 내에 경로 직접 지정 필요)
-- 사내 LLM 접근 권한 (`LLM_BASE_URL`, `LLM_API_KEY`)
+### Step 1. 사전 준비물 확인
+- **Python 3.9 이상**이 설치되어 있어야 합니다.
+- 터미널(또는 명령 프롬프트)을 열고 아래 명령어를 입력하여 필요한 파이썬 라이브러리를 모두 설치합니다.
+  ```bash
+  pip install -r requirements.txt
+  ```
 
----
-
-## 🚀 설치 및 초기 설정 (Installation & Setup)
-**1. 패키지 설치**
-```bash
-pip install -r requirements.txt
-```
-
-**2. 환경 변수(`.env`) 설정**
-프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 아래 내용을 본인의 환경에 맞게 작성합니다.
+### Step 2. 환경 변수(`.env`) 셋팅
+프로그램이 코드를 읽어올 위치와 DB에 접속할 정보, 사내 LLM 접근 키를 알려주기 위해 프로젝트 최상단에 `.env` 파일을 생성하고 내용을 작성합니다.
 
 ```dotenv
-# 1. 분석할 로컬 소스 코드 경로 (SVN/Git 체크아웃 폴더 등)
-SOURCE_DIRECTORY=C:/path/to/your/monolith_source
+# 1. MSA로 전환할 레거시 소스 코드가 들어있는 최상위 폴더 경로
+SOURCE_DIRECTORY=C:/workspace/legacy_project/src
 
-# 2. 사내 LLM (Qwen 3.5 등) API 설정
+# 2. 데이터베이스 스키마(DDL) 자동 추출을 위한 DB 접속 URL (필수 아님, DB 연동 시에만)
+# 형태: [DB종류]+[드라이버]://[아이디]:[비밀번호]@[주소]:[포트]/[DB명]
+# MySQL 예시: mysql+pymysql://root:1234@localhost:3306/legacy_db
+# Oracle 예시: oracle+cx_oracle://admin:1234@192.168.0.10:1521/?service_name=orcl
+DB_URL=mysql+pymysql://root:1234@localhost:3306/legacy_db
+
+# 3. 사내 AI(LLM) 접근 키
 LLM_BASE_URL=http://your-internal-llm-server/v1
 LLM_API_KEY=your_internal_llm_api_key
 LLM_MODEL_NAME=qwen3.5
 
-# 3. 분석 제외 경로 (쉼표로 구분)
+# 4. 분석에서 제외할 폴더 지정 (쉼표로 구분)
 EXCLUDE_PATHS=com/example/common,src/test
 
-# 4. 성능 튜닝 (PC 및 서버 스펙에 맞게 조절)
-LLM_MAX_WORKERS=5                # 동시에 분석할 파일(프로세스) 개수 (OOM 발생 시 2~3으로 하향)
-WORKER_TIMEOUT_SECONDS=300       # 개별 파일 분석 최대 허용 시간 (초 단위)
-ASYNC_CHUNK_CONCURRENCY=3        # 대용량 Java/XML 분할 시, 1개 파일 내 동시 비동기 요청 수
-ASYNC_CHUNK_CONCURRENCY_SQL=1    # 대용량 DDL(.sql) 분할 시, 동시 비동기 요청 수 (VRAM 보호를 위해 1 권장)
+# 5. 성능 조절 (※ OOM 오류가 잦다면 LLM_MAX_WORKERS 숫자를 2~3으로 줄이세요)
+LLM_MAX_WORKERS=5
+WORKER_TIMEOUT_SECONDS=300
+ASYNC_CHUNK_CONCURRENCY=3
+ASYNC_CHUNK_CONCURRENCY_SQL=1
 ```
 
-**3. 사내 폐쇄망(Offline) 설치 가이드 (선택)**
-사내 Nexus(PyPI 프록시)에 `Pebble`, `javalang` 등이 차단되어 설치가 안 되는 경우:
-- **오프라인 반입**: 인터넷이 되는 외부 PC에서 `pip download -r requirements.txt -d ./offline_pkg` 실행 후 사내망으로 가져와 `pip install --no-index --find-links=./offline_pkg -r requirements.txt` 실행
-- **내장 모듈 우회**: `javalang`은 설치하지 못해도 단순 분할로 자동 우회(Fallback)되므로 에러 없이 그대로 사용 가능합니다.
+### Step 3. (권장) DB 스키마 자동 추출하기
+MSA 전환 시 데이터베이스 분리 설계는 가장 중요합니다. 프로그램이 DB를 분석할 수 있도록 코드가 있는 폴더(`SOURCE_DIRECTORY`) 안에 `.sql` 파일을 만들어 주어야 합니다.
 
----
+`.env`에 `DB_URL`을 설정해 두었다면, 터미널에서 명령어 한 줄로 DB에 직접 접속해 자동으로 `.sql` 파일을 만들어낼 수 있습니다.
+*(DB 종류에 따라 `pip install pymysql` 또는 `pip install cx_Oracle`이 선행되어야 합니다.)*
 
-## 📖 사용 설명서 (User Guide)
+```bash
+# 기본 실행 (.env의 DB_URL 설정값을 읽어서 소스 폴더에 schema.sql을 자동 생성)
+python extract_ddl.py
 
-### 1. DB 스키마(DDL) 추출 및 세팅 (권장)
-정확한 데이터베이스 분리와 마이그레이션 우선순위 분석을 위해 ERD에서 DDL을 추출합니다.
-1. SQL Developer Data Modeler에서 `.dmd` 파일을 엽니다.
-2. `File` -> `Export` -> `DDL File`을 통해 `.sql` 스크립트를 추출합니다.
-3. 추출된 `.sql` 파일을 `SOURCE_DIRECTORY` 폴더 안에 넣습니다.
+# 오라클 등에서 특정 스키마만 콕 집어서 추출하고 싶은 경우
+python extract_ddl.py --schema "MY_SCHEMA"
+```
 
-### 2. 파이프라인 분석 실행
-터미널에서 아래 명령어를 실행하여 분석을 시작합니다.
+### Step 4. 본격적인 AI 분석 파이프라인 가동!
+준비가 끝났습니다. 아래 명령어를 실행하고 커피 한 잔 드시고 오시면 됩니다.
 ```bash
 python main.py
 ```
-* **자동 재개 (Checkpoint)**: 중단되더라도 다시 실행하면 이미 분석된 파일은 1초 만에 `[SKIP]` 처리되므로 이어서 분석이 가능합니다.
+* **이어하기 기능**: 파일이 너무 많아 중간에 컴퓨터를 끄더라도 걱정 마세요. 다시 실행하면 이미 분석이 완료된 파일은 1초 만에 `[SKIP]` 처리되며 남은 파일부터 이어서 분석합니다.
 
-### 3. 결과물 확인 및 공유
-파이프라인이 100% 완료되면 루트 디렉토리에 다음 산출물들이 자동 생성됩니다.
-* **`msa_analysis_output.zip`**: 모든 산출물이 예쁘게 압축된 공유용 파일입니다.
-* **CSV 엑셀 추출물**: `domain_table_mapping.csv` (DB 마이그레이션 팀용), `service_dependencies.csv` (의존성 분석용), `api_endpoints.csv` (엔드포인트 추출용)
-* **리포트**: `msa_analysis_report.html` (웹 브라우저 인터랙티브 리포트), `msa_analysis_report.pdf`, `merged_msa_report.md`
+---
 
-### 4. 서버 장애 누락분 자동 복구 (Recovery)
-사내 LLM 서버의 VRAM 부족(OOM)이나 타임아웃으로 분석이 실패한 파일들만 모아서 빠르게 재분석합니다.
+## 🎁 결과물 확인하기 (Outputs)
+
+파이프라인이 100% 완료되면 화면에 성공률이 뜨면서 프로젝트 폴더에 `msa_analysis_output.zip` 이라는 압축 파일이 생성됩니다. 이 파일을 압축 해제하면 다음의 보물 같은 산출물들을 확인할 수 있습니다.
+
+1. **`msa_analysis_report.html` (가장 중요 ⭐)**
+   * 마우스를 더블 클릭하여 웹 브라우저(Chrome 등)로 여세요.
+   * 왼쪽 목차를 클릭하여 개별 파일의 분석 결과를 볼 수 있으며, 화면에 **UML 클래스 다이어그램**이 예쁘게 그려진 것을 볼 수 있습니다.
+2. **`domain_table_mapping.csv` 외 CSV 파일 3종**
+   * 엑셀로 열어보시면 전체 소스 코드가 어떤 비즈니스 프로세스(LV1~LV5)와 도메인(Bounded Context)으로 맵핑되어 있는지 표 형태로 깔끔하게 정리되어 있습니다. (마이그레이션 우선순위 도출용)
+3. **`swagger.json`**
+   * 레거시 코드 내부에 숨어있던 API 호출 엔드포인트들을 찾아내어 OpenAPI(Swagger) 규격으로 만들어 줍니다. Swagger UI에 드래그 앤 드롭해서 시각적으로 확인하세요.
+
+---
+
+## 🚑 장애 복구 및 관리 (Recovery & Cleanup)
+
+**1. 누락된 파일만 재분석하기**
+서버 네트워크가 잠시 끊겼거나 사내 LLM VRAM 부족으로 몇몇 파일 분석이 `[TIMEOUT]`으로 실패했나요? 
+처음부터 다시 할 필요 없이 아래 명령어만 치면, 실패한 파일만 쏙쏙 찾아내어 재시도합니다.
 ```bash
 python retry_server_errors.py
 ```
 
-### 5. 프로젝트 산출물 초기화 (Clean)
-테스트로 생성된 모든 분석 결과(리포트, 로그, CSV, ZIP 등)를 삭제하고 초기 상태로 되돌립니다.
+**2. 초기화하기 (새 프로젝트 시작)**
+다른 프로젝트의 소스 코드를 분석하고 싶거나, 결과를 싹 지우고 처음부터 다시 하고 싶다면 아래 명령어를 입력하세요. 깔끔하게 모든 로그와 결과물을 청소해 줍니다.
 ```bash
 python clean.py
 ```
-
----
-
-## 🕵️‍♂️ 트러블슈팅 (Troubleshooting)
-
-- **`[⚠️ PDF 생성 실패]`**: OS에 `wkhtmltopdf`가 설치되어 있지 않거나 환경변수(PATH)에 등록되지 않았습니다.
-- **다이어그램 자리에 코드(dot)가 그대로 출력될 때**: OS에 `Graphviz`가 설치되지 않았거나, 설치 시 "Add to PATH" 체크박스를 누락한 경우입니다. 재설치 후 터미널을 재시작하세요.
-- **VRAM OOM (502/503 에러) 발생 시**: `.env` 파일의 `LLM_MAX_WORKERS`를 2 정도로 줄이고, 타임아웃을 600초로 늘려 서버 부하를 낮추세요. 상세 로그는 `error.log` 파일에서 확인할 수 있습니다.

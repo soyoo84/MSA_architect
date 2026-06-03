@@ -128,9 +128,6 @@ def process_file(file_path: str) -> str:
             logging.error(f"청크 결과 병합 실패 ({file_name}): {e}", exc_info=True)
             result_text = f"> ⚠️ **대용량 파일 분할 분석 (병합 실패)**\n> 요약 병합 중 오류가 발생하여 개별 청크 분석 결과를 그대로 출력합니다: {e}\n\n" + raw_chunk_results
     
-    # Graphviz 로컬 렌더링 적용 및 이미지 경로로 치환
-    result_text = render_graphviz_to_svg(result_text, file_name)
-    
     with open(result_file, 'w', encoding='utf-8') as rf:
         rf.write(f"# {file_name} MSA 분석 리포트\n\n{result_text}")
         
@@ -141,37 +138,62 @@ def process_file(file_path: str) -> str:
 
 
 def generate_architecture_summary() -> None:
-    """모든 개별 분석 결과를 모아 하나의 전체 요약 아키텍처 가이드를 생성합니다."""
+    """추출된 CSV 데이터를 바탕으로 전체 시스템의 요약 아키텍처 가이드를 생성합니다."""
     summary_file = os.path.join(RESULT_DIR, "_architecture_summary.md")
     
     if os.path.exists(summary_file):
         print("\n[SKIP] 전체 요약 아키텍처 가이드가 이미 존재합니다.")
         return
 
-    print("\n전체 분석 결과를 종합하여 요약 아키텍처 가이드를 생성합니다 (시간이 다소 소요될 수 있습니다)...")
+    print("\n추출된 도메인/프로세스(CSV) 데이터를 바탕으로 전체 요약 아키텍처 가이드를 생성합니다...")
     
-    combined_texts = []
-    with os.scandir(RESULT_DIR) as it:
-        for entry in it:
-            if entry.is_file() and entry.name.endswith(".md") and entry.name != "_architecture_summary.md":
-                with open(entry.path, "r", encoding="utf-8") as f:
-                    combined_texts.append(f"--- {entry.name} ---\n{f.read()}\n\n")
-                
-    if not combined_texts:
-        return
+    import csv
+    from collections import defaultdict
+    
+    # Process Level -> Domain -> set(Aggregate Roots)
+    hierarchy = defaultdict(lambda: defaultdict(set))
+    mapping_csv = "domain_table_mapping.csv"
+    
+    if os.path.exists(mapping_csv):
+        try:
+            with open(mapping_csv, "r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    pl = row.get("Process Level", "Unknown").strip()
+                    domain = row.get("Domain", "Unknown").strip()
+                    ar = row.get("Aggregate Root", "").strip()
+                    
+                    if not pl: pl = "Unknown"
+                    if not domain: domain = "Unknown"
+                    
+                    if ar and ar.lower() not in ['n/a', 'none', '-', '']:
+                        hierarchy[pl][domain].add(ar)
+                    else:
+                        # Aggregate Root가 없더라도 도메인은 등록
+                        if domain not in hierarchy[pl]:
+                            hierarchy[pl][domain] = set()
+        except Exception as e:
+            logging.error(f"CSV 읽기 실패: {e}")
+            
+    context_lines = ["[To-Be MSA 프로세스 체계 및 도메인 구조 요약]"]
+    for pl, domains in sorted(hierarchy.items()):
+        context_lines.append(f"\n■ {pl}")
+        for dom, ars in sorted(domains.items()):
+            ar_str = ", ".join(sorted(ars)) if ars else "정의되지 않음"
+            context_lines.append(f"  - Bounded Context: {dom} | Aggregate Roots: [{ar_str}]")
+            
+    combined_text = "\n".join(context_lines)
+    
+    # 데이터가 너무 방대한 경우에도 LLM 토큰을 보호 (CSV 기반이므로 텍스트량이 획기적으로 적음)
+    if len(combined_text) > 30000:
+        combined_text = combined_text[:30000] + "\n... (데이터가 너무 방대하여 일부가 생략되었습니다) ..."
         
-    combined_text = "".join(combined_texts)
-        
-    # LLM 토큰 한도를 보호하기 위해 최대 50,000자(약 1.5만~2만 토큰)로 텍스트 제한
-    if len(combined_text) > 50000:
-        combined_text = combined_text[:50000] + "\n\n... (중략: 토큰 한도 제한으로 일부 결과만 요약에 반영됨) ..."
+    if len(hierarchy) == 0:
+        combined_text = "추출된 도메인 데이터가 없습니다. (CSV 파일이 비어있거나 생성되지 않음)"
         
     try:
         # llm_service를 통해 요약본 생성 (비동기 호출)
         summary_content = asyncio.run(generate_summary_with_qwen(combined_text))
-        
-        # 전체 요약 가이드에도 Graphviz 로컬 렌더링 적용
-        summary_content = render_graphviz_to_svg(summary_content, "summary")
         
         with open(summary_file, 'w', encoding='utf-8') as rf:
             rf.write(f"# 🌟 전체 요약 아키텍처 가이드\n\n{summary_content}")
@@ -284,19 +306,19 @@ def main() -> None:
         "rate": f"{success_rate:.1f}"
     }
 
-    # 통합 아키텍처 요약본 생성
+    # 도메인-테이블 및 서비스 의존성 CSV 통합 추출 (요약 생성 시 활용)
+    extract_csv.main()
+
+    # 통합 아키텍처 요약본 생성 (CSV 데이터 활용)
     generate_architecture_summary()
     
-    # HTML/PDF 리포트 및 통합 마크다운 문서 생성
+    # HTML 리포트 및 통합 마크다운 문서 생성
     generate_report.main(stats)
     merge_reports.main()
-    
-    # 도메인-테이블 및 서비스 의존성 CSV 통합 추출
-    extract_csv.main()
-    
+
     # API 엔드포인트로 Swagger 파일 자동 생성
     generate_swagger.main()
-    
+
     # 모든 결과물을 ZIP으로 압축
     create_zip_archive()
 

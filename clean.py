@@ -8,7 +8,6 @@ def main():
     # 삭제할 단일 파일 및 패턴 목록
     files_to_remove = [
         "msa_analysis_report.html",
-        "msa_analysis_report.pdf",
         "merged_msa_report.md",
         "domain_table_mapping.csv",
         "service_dependencies.csv",

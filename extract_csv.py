@@ -32,7 +32,7 @@ def main() -> None:
     print("분석 결과에서 표(Table) 데이터를 추출하여 CSV로 통합 저장합니다...")
     
     all_mappings = []
-    mapping_headers = ["Source File", "Type", "Object Name", "Domain", "Aggregate Root", "Migration Priority", "Description / Details"]
+    mapping_headers = ["Source File", "Type", "Object Name", "Process Level", "Domain", "Aggregate Root", "Migration Priority", "Description / Details"]
     
     all_dependencies = []
     dependency_headers = ["Source File", "Dependency Target", "Target Domain", "Reason / Details"]
@@ -68,11 +68,11 @@ def main() -> None:
                                 continue
                                 
                             if is_mapping:
-                                normalized_cells = cells[:5]  # Type, Object Name, Domain, Aggregate Root, Migration Priority (5개 추출)
-                                if len(cells) > 5:
-                                    normalized_cells.append(" / ".join(cells[5:])) # 나머지는 Description에 병합
+                                normalized_cells = cells[:6]  # Type, Object Name, Process Level, Domain, Aggregate Root, Migration Priority (6개 추출)
+                                if len(cells) > 6:
+                                    normalized_cells.append(" / ".join(cells[6:])) # 나머지는 Description에 병합
                                 else:
-                                    normalized_cells.extend([""] * (6 - len(cells))) # 부족한 열 채우기
+                                    normalized_cells.extend([""] * (7 - len(cells))) # 부족한 열 채우기
                                 all_mappings.append([file_name] + normalized_cells)
                             elif is_dependency:
                                 normalized_cells = cells[:3]
@@ -90,7 +90,7 @@ def main() -> None:
                                 all_endpoints.append([file_name] + normalized_cells)
 
     # 엑셀에서 분석하기 편하도록 데이터 정렬(Sorting) 최적화
-    all_mappings.sort(key=lambda x: (x[3], x[0], x[2]))  # Domain -> Source File -> Object Name
+    all_mappings.sort(key=lambda x: (x[4], x[0], x[2]))  # Domain -> Source File -> Object Name
     all_dependencies.sort(key=lambda x: (x[2], x[0], x[1]))  # Target Domain -> Source File -> Target
     all_endpoints.sort(key=lambda x: (x[0], x[1]))  # Source File -> Endpoint
 
