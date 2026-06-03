@@ -18,18 +18,31 @@ def main():
         with open(summary_file, "r", encoding="utf-8") as f:
             merged_parts.append(f"{f.read()}\n\n---\n\n")
             
-    merged_parts.append("## 📂 개별 파일 분석 상세 내역\n\n")
+    # 2. 개별 파일 분석 상세 내역 목차(TOC) 생성
+    merged_parts.append("## 📑 개별 파일 분석 상세 내역 목차\n\n")
+    
+    # os.scandir를 활용해 파일 탐색 최적화
+    with os.scandir(RESULT_DIR) as it:
+        entries = [entry for entry in it if entry.is_file() and entry.name.endswith(".md") and entry.name not in ["_architecture_summary.md", OUTPUT_FILE]]
+    
+    sorted_entries = sorted(entries, key=lambda e: e.name)
+    
+    for entry in sorted_entries:
+        # 마크다운 앵커 링크용 소문자 변환 및 공백 처리
+        anchor = entry.name.lower().replace(" ", "-").replace(".", "")
+        merged_parts.append("- [📄 {}](#-{}) \n".format(entry.name, anchor))
+    
+    merged_parts.append("\n---\n\n## 📂 개별 파일 분석 상세 내역\n\n")
 
-    # 2. 나머지 모든 개별 분석 마크다운 파일을 순회하며 내용 이어붙이기
+    # 3. 나머지 모든 개별 분석 마크다운 파일을 순회하며 내용 이어붙이기
     count = 0
-    for file_name in sorted(os.listdir(RESULT_DIR)):
-        # 요약본과 병합 결과물 파일 자체는 중복 추가 방지를 위해 제외
-        if file_name.endswith(".md") and file_name not in ["_architecture_summary.md", OUTPUT_FILE]:
-            file_path = os.path.join(RESULT_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f:
-                # 구분선과 함께 파일의 내용 병합
-                merged_parts.append(f"### 📄 {file_name}\n\n{f.read()}\n\n<br>\n\n---\n\n")
-            count += 1
+    
+    for entry in sorted_entries:
+        with open(entry.path, "r", encoding="utf-8") as f:
+            # 앵커 타겟으로 인식될 수 있도록 제목 추가
+            anchor_target = entry.name.lower().replace(".", "")
+            merged_parts.append(f"<a id=\"-{anchor_target}\"></a>\n### 📄 {entry.name}\n\n{f.read()}\n\n<br>\n\n---\n\n")
+        count += 1
 
     if count == 0:
         print("병합할 개별 Markdown 리포트 파일이 없습니다.")

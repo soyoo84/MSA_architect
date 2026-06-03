@@ -5,11 +5,13 @@ from tqdm import tqdm
 from pebble import ProcessPool
 
 # 기존 파이프라인의 모듈들을 재사용합니다.
-from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS
+from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS, EXCLUDE_PATHS
 from parser import get_target_files
 from main import process_file, generate_architecture_summary, create_zip_archive
 import generate_report
 import merge_reports
+import extract_csv
+import generate_swagger
 
 LOG_FILE = "skipped_files.log"
 
@@ -38,7 +40,7 @@ def main():
     print(f"총 {len(failed_filenames)}개의 복구 대상(서버 장애/타임아웃) 파일명을 찾았습니다.")
 
     # 2. 전체 대상 파일 목록에서 해당 파일명과 일치하는 실제 절대 경로 수집
-    all_files = get_target_files(SOURCE_DIRECTORY)
+    all_files = get_target_files(SOURCE_DIRECTORY, exclude_paths=EXCLUDE_PATHS)
     retry_target_files = [f for f in all_files if os.path.basename(f) in failed_filenames]
 
     print(f"실제 경로가 매핑된 재시도 대상 파일: {len(retry_target_files)}개\n")
@@ -75,6 +77,8 @@ def main():
     generate_architecture_summary()
     generate_report.main()
     merge_reports.main()
+    extract_csv.main()
+    generate_swagger.main()
     create_zip_archive()
     print("✨ 리포트 갱신 및 ZIP 압축이 모두 완료되었습니다!")
 

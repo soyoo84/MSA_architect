@@ -13,14 +13,8 @@ jinja2>=3.1.2
 # 콘솔 진행률 표시(Progress Bar)를 위한 라이브러리
 tqdm>=4.65.0
 
-# 로컬 환경에서 다이어그램(Graphviz) SVG 렌더링을 위한 라이브러리
-graphviz>=0.20.1
-
-# Markdown을 HTML로 변환하기 위한 파이썬 라이브러리 (PDF 생성용)
+# Markdown을 HTML로 변환하기 위한 파이썬 라이브러리
 markdown>=3.5.2
-
-# HTML을 PDF로 변환하기 위한 라이브러리 (OS에 wkhtmltopdf 설치 필요)
-pdfkit>=1.0.0
 
 # 대용량 Java 파일의 AST 구문 분석 및 청크(메서드 단위) 분할을 위한 라이브러리
 javalang>=0.13.0
@@ -30,3 +24,6 @@ concurrent-log-handler>=0.9.24
 
 # ProcessPool의 개별 작업 타임아웃 제어 및 좀비 프로세스 방지를 위한 라이브러리
 Pebble>=5.0.3
+
+# 데이터베이스에 접속하여 DDL을 추출하기 위한 ORM 프레임워크
+SQLAlchemy>=2.0.27

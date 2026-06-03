@@ -3,16 +3,19 @@ import concurrent.futures
 import asyncio
 import logging
 import openai
+from typing import Dict, Any
 from tqdm import tqdm
 from pebble import ProcessPool
 
 # 작성해둔 config.py에서 설정값과 초기화된 LLM 클라이언트를 가져옵니다.
-from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS, ASYNC_CHUNK_CONCURRENCY
-from parser import get_target_files, chunk_java_code, chunk_xml_code
+from config import SOURCE_DIRECTORY, LLM_MAX_WORKERS, WORKER_TIMEOUT_SECONDS, ASYNC_CHUNK_CONCURRENCY, ASYNC_CHUNK_CONCURRENCY_SQL, EXCLUDE_PATHS
+from parser import get_target_files, chunk_java_code, chunk_xml_code, chunk_sql_code, extract_sql_object_names
 from llm_service import analyze_with_qwen, summarize_chunks_with_qwen, generate_summary_with_qwen
 from diagram import render_graphviz_to_svg
 import generate_report
 import merge_reports
+import extract_csv
+import generate_swagger
 import zipfile
 
 RESULT_DIR = "./analysis_results"
@@ -20,7 +23,8 @@ RESULT_DIR = "./analysis_results"
 # 분석 결과를 저장할 디렉토리 생성
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-def process_file(file_path):
+
+def process_file(file_path: str) -> str:
     """단일 파일을 분석하고 결과를 저장하는 워커 함수입니다."""
     # 1. 파일 이름 충돌 방지: 패키지(디렉토리) 경로를 언더스코어로 결합하여 고유한 파일명 생성 (예: src_main_java_User.java)
     rel_path = os.path.relpath(file_path, SOURCE_DIRECTORY)
@@ -48,8 +52,8 @@ def process_file(file_path):
     
     if not needs_chunking:
         try:
-            # LLM 분석 요청 (단일 파일 비동기 호출)
-            result_text = asyncio.run(analyze_with_qwen(source_code))
+            # LLM 분석 요청 (단일 파일 비동기 호출, 파일명 전달)
+            result_text = asyncio.run(analyze_with_qwen(source_code, file_name=file_name))
         except openai.BadRequestError as e:
             # 토큰 한도 초과 등 400 에러 발생 시
             logging.warning(f"토큰 한도 초과 ({file_name}). 분할 분석을 시도합니다: {e}")
@@ -64,9 +68,19 @@ def process_file(file_path):
             
     # needs_chunking이 True가 된 경우 분할 분석 수행
     if needs_chunking:
+        global_context = ""
+        
         if file_name.endswith(".xml"):
             chunks = chunk_xml_code(source_code, max_lines=1500)
             chunk_type = "쿼리(태그)"
+        elif file_name.endswith(".sql"):
+            chunks = chunk_sql_code(source_code, max_lines=1500)
+            chunk_type = "테이블(DDL)"
+            
+            # SQL 파일인 경우 전체 테이블/객체 목록을 추출하여 Global Context로 생성
+            object_names = extract_sql_object_names(source_code)
+            if object_names:
+                global_context = f"\n[전체 시스템 데이터베이스 객체 목록 (참고용: 현재 청크에 없는 객체와의 외부 FK 연관 관계 식별 시 활용)]\n{', '.join(object_names)}\n"
         else:
             chunks = chunk_java_code(source_code, max_lines=1500)
             chunk_type = "메서드"
@@ -75,12 +89,13 @@ def process_file(file_path):
         
         # 청크 조각들을 비동기로 동시에 요청합니다.
         async def process_all_chunks():
-            # 사내 LLM 서버 보호를 위해 Semaphore 적용
-            sem = asyncio.Semaphore(ASYNC_CHUNK_CONCURRENCY)
+            # 사내 LLM 서버 보호를 위해 Semaphore 적용 (SQL 파일은 별도의 엄격한 제한 적용)
+            concurrency_limit = ASYNC_CHUNK_CONCURRENCY_SQL if file_name.endswith(".sql") else ASYNC_CHUNK_CONCURRENCY
+            sem = asyncio.Semaphore(concurrency_limit)
             
             async def bounded_analyze(chunk, i):
                 async with sem:
-                    return await analyze_with_qwen(chunk, is_chunk=True, chunk_info=f"{i+1}/{len(chunks)}")
+                    return await analyze_with_qwen(chunk, is_chunk=True, chunk_info=f"{i+1}/{len(chunks)}", file_name=file_name, global_context=global_context)
                     
             tasks = [bounded_analyze(chunk, i) for i, chunk in enumerate(chunks)]
             return await asyncio.gather(*tasks, return_exceptions=True)
@@ -113,9 +128,6 @@ def process_file(file_path):
             logging.error(f"청크 결과 병합 실패 ({file_name}): {e}", exc_info=True)
             result_text = f"> ⚠️ **대용량 파일 분할 분석 (병합 실패)**\n> 요약 병합 중 오류가 발생하여 개별 청크 분석 결과를 그대로 출력합니다: {e}\n\n" + raw_chunk_results
     
-    # Graphviz 로컬 렌더링 적용 및 이미지 경로로 치환
-    result_text = render_graphviz_to_svg(result_text, file_name)
-    
     with open(result_file, 'w', encoding='utf-8') as rf:
         rf.write(f"# {file_name} MSA 분석 리포트\n\n{result_text}")
         
@@ -124,37 +136,64 @@ def process_file(file_path):
     else:
         return f"[SUCCESS] 분석 완료: {file_name}"
 
-def generate_architecture_summary():
-    """모든 개별 분석 결과를 모아 하나의 전체 요약 아키텍처 가이드를 생성합니다."""
+
+def generate_architecture_summary() -> None:
+    """추출된 CSV 데이터를 바탕으로 전체 시스템의 요약 아키텍처 가이드를 생성합니다."""
     summary_file = os.path.join(RESULT_DIR, "_architecture_summary.md")
     
     if os.path.exists(summary_file):
         print("\n[SKIP] 전체 요약 아키텍처 가이드가 이미 존재합니다.")
         return
 
-    print("\n전체 분석 결과를 종합하여 요약 아키텍처 가이드를 생성합니다 (시간이 다소 소요될 수 있습니다)...")
+    print("\n추출된 도메인/프로세스(CSV) 데이터를 바탕으로 전체 요약 아키텍처 가이드를 생성합니다...")
     
-    combined_texts = []
-    for file_name in os.listdir(RESULT_DIR):
-        if file_name.endswith(".md") and file_name != "_architecture_summary.md":
-            with open(os.path.join(RESULT_DIR, file_name), "r", encoding="utf-8") as f:
-                combined_texts.append(f"--- {file_name} ---\n{f.read()}\n\n")
-                
-    if not combined_texts:
-        return
+    import csv
+    from collections import defaultdict
+    
+    # Process Level -> Domain -> set(Aggregate Roots)
+    hierarchy = defaultdict(lambda: defaultdict(set))
+    mapping_csv = "domain_table_mapping.csv"
+    
+    if os.path.exists(mapping_csv):
+        try:
+            with open(mapping_csv, "r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    pl = row.get("Process Level", "Unknown").strip()
+                    domain = row.get("Domain", "Unknown").strip()
+                    ar = row.get("Aggregate Root", "").strip()
+                    
+                    if not pl: pl = "Unknown"
+                    if not domain: domain = "Unknown"
+                    
+                    if ar and ar.lower() not in ['n/a', 'none', '-', '']:
+                        hierarchy[pl][domain].add(ar)
+                    else:
+                        # Aggregate Root가 없더라도 도메인은 등록
+                        if domain not in hierarchy[pl]:
+                            hierarchy[pl][domain] = set()
+        except Exception as e:
+            logging.error(f"CSV 읽기 실패: {e}")
+            
+    context_lines = ["[To-Be MSA 프로세스 체계 및 도메인 구조 요약]"]
+    for pl, domains in sorted(hierarchy.items()):
+        context_lines.append(f"\n■ {pl}")
+        for dom, ars in sorted(domains.items()):
+            ar_str = ", ".join(sorted(ars)) if ars else "정의되지 않음"
+            context_lines.append(f"  - Bounded Context: {dom} | Aggregate Roots: [{ar_str}]")
+            
+    combined_text = "\n".join(context_lines)
+    
+    # 데이터가 너무 방대한 경우에도 LLM 토큰을 보호 (CSV 기반이므로 텍스트량이 획기적으로 적음)
+    if len(combined_text) > 30000:
+        combined_text = combined_text[:30000] + "\n... (데이터가 너무 방대하여 일부가 생략되었습니다) ..."
         
-    combined_text = "".join(combined_texts)
-        
-    # LLM 토큰 한도를 보호하기 위해 최대 50,000자(약 1.5만~2만 토큰)로 텍스트 제한
-    if len(combined_text) > 50000:
-        combined_text = combined_text[:50000] + "\n\n... (중략: 토큰 한도 제한으로 일부 결과만 요약에 반영됨) ..."
+    if len(hierarchy) == 0:
+        combined_text = "추출된 도메인 데이터가 없습니다. (CSV 파일이 비어있거나 생성되지 않음)"
         
     try:
         # llm_service를 통해 요약본 생성 (비동기 호출)
         summary_content = asyncio.run(generate_summary_with_qwen(combined_text))
-        
-        # 전체 요약 가이드에도 Graphviz 로컬 렌더링 적용
-        summary_content = render_graphviz_to_svg(summary_content, "summary")
         
         with open(summary_file, 'w', encoding='utf-8') as rf:
             rf.write(f"# 🌟 전체 요약 아키텍처 가이드\n\n{summary_content}")
@@ -163,20 +202,22 @@ def generate_architecture_summary():
         print(f"[ERROR] 요약 가이드 생성 중 오류 발생: {e}")
         logging.error("전체 요약 아키텍처 가이드 생성 중 오류 발생", exc_info=True)
 
-def create_zip_archive():
+
+def create_zip_archive() -> None:
     """최종 분석 결과물과 리포트 파일들을 팀원 공유용 ZIP 파일로 압축합니다."""
     zip_filename = "msa_analysis_output.zip"
     print(f"\n최종 결과물들을 팀원 공유용 파일({zip_filename})로 압축합니다...")
     
     try:
         with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # 1. 개별 분석 결과 마크다운 및 SVG 다이어그램 폴더 포함
-            for root, _, files in os.walk(RESULT_DIR):
-                for file in files:
-                    arcname = os.path.relpath(os.path.join(root, file), ".")
-                    zipf.write(os.path.join(root, file), arcname)
+            # 1. 개별 분석 결과 마크다운 및 SVG 다이어그램 포함 (os.walk 대신 os.scandir 사용으로 속도 최적화)
+            with os.scandir(RESULT_DIR) as it:
+                for entry in it:
+                    if entry.is_file():
+                        arcname = os.path.relpath(entry.path, ".")
+                        zipf.write(entry.path, arcname)
             # 2. 루트 디렉토리의 생성된 리포트 및 로그 파일들 포함
-            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "error.log", "skipped_files.log"]:
+            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "domain_table_mapping.csv", "service_dependencies.csv", "api_endpoints.csv", "swagger.json", "error.log", "skipped_files.log"]:
                 if os.path.exists(report):
                     zipf.write(report)
         print(f"✨ 압축 완료: {zip_filename} (이 파일을 팀원들과 공유하세요!)")
@@ -184,15 +225,16 @@ def create_zip_archive():
         print(f"[ERROR] ZIP 압축 중 오류 발생: {e}")
         logging.error("ZIP 파일 생성 중 오류 발생", exc_info=True)
 
-def main():
+
+def main() -> None:
     print(f"소스 코드 디렉토리 '{SOURCE_DIRECTORY}'에서 분석을 시작합니다...\n")
     
-    target_files = get_target_files(SOURCE_DIRECTORY)
+    target_files = get_target_files(SOURCE_DIRECTORY, exclude_paths=EXCLUDE_PATHS)
     if not target_files:
-        print("분석할 .java 또는 .xml 파일이 존재하지 않습니다. 경로를 확인해주세요.")
+        print("분석할 .java, .xml, .sql 파일이 존재하지 않습니다. 경로를 확인해주세요.")
         return
 
-    print(f"총 {len(target_files)}개의 분석 대상(Java, XML) 파일을 찾았습니다.\n")
+    print(f"총 {len(target_files)}개의 분석 대상(Java, XML, SQL) 파일을 찾았습니다.\n")
 
     print(f"[{LLM_MAX_WORKERS}]개의 워커(Worker)로 병렬 분석을 시작합니다...\n")
 
@@ -264,13 +306,19 @@ def main():
         "rate": f"{success_rate:.1f}"
     }
 
-    # 통합 아키텍처 요약본 생성
+    # 도메인-테이블 및 서비스 의존성 CSV 통합 추출 (요약 생성 시 활용)
+    extract_csv.main()
+
+    # 통합 아키텍처 요약본 생성 (CSV 데이터 활용)
     generate_architecture_summary()
     
-    # HTML/PDF 리포트 및 통합 마크다운 문서 생성
+    # HTML 리포트 및 통합 마크다운 문서 생성
     generate_report.main(stats)
     merge_reports.main()
-    
+
+    # API 엔드포인트로 Swagger 파일 자동 생성
+    generate_swagger.main()
+
     # 모든 결과물을 ZIP으로 압축
     create_zip_archive()
 
