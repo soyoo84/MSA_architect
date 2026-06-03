@@ -34,6 +34,36 @@
 
 ---
 
+## 📁 프로젝트 구조 (Directory Structure)
+
+본 프로그램을 실행하기 전과 후의 전체적인 폴더 및 파일 구조는 다음과 같습니다. (분석을 시작하면 필요한 디렉토리들은 자동으로 생성됩니다.)
+
+```text
+MSA_architect/
+├── .env                        # 환경 변수 설정 파일 (DB 접속, LLM 키 등)
+├── requirements.txt            # 파이썬 라이브러리 의존성 목록
+├── main.py                     # 🚀 메인 실행 스크립트 (파이프라인 시작점)
+├── llm_service.py              # LLM 비동기 호출 및 프롬프트 관리
+├── parser.py                   # AST/정규식 기반 대용량 소스 분할기
+├── extract_ddl.py              # DB 스키마 자동 추출 스크립트
+├── generate_report.py          # 브라우저용 HTML 리포트 렌더링 스크립트
+├── merge_reports.py            # 파편화된 리포트 마크다운 통합 스크립트
+├── extract_csv.py              # 프로세스/도메인 매핑 CSV 데이터 추출 스크립트
+├── generate_swagger.py         # To-Be API Swagger 생성 스크립트
+├── analyze_single.py           # 단일 파일 지정 분석 스크립트
+├── retry_server_errors.py      # 에러/누락 파일 재처리 스크립트
+├── clean.py                    # 산출물 및 로그 초기화 스크립트
+├── config.py                   # 환경 변수 로드 및 공통 설정
+├── templates/                  # 📂 (자동생성)
+│   └── report_template.html    # 웹 리포트 렌더링용 HTML 템플릿
+├── monolith_source/            # 📂 (자동생성) 분석할 레거시 소스 코드를 넣는 곳
+│   └── schema.sql              # (자동추출) DB 스키마 파일
+├── analysis_results/           # 📂 (자동생성) 개별 분석 마크다운 결과물 저장소
+└── msa_analysis_output.zip     # 📦 (최종결과) 모든 분석 산출물이 압축된 공유용 파일
+```
+
+---
+
 ## 🚀 처음 오신 분들을 위한 시작 가이드 (Getting Started)
 
 처음 파이썬 프로그램을 다루시는 분들도 쉽게 따라 하실 수 있도록 구성했습니다.
@@ -119,7 +149,13 @@ python main.py
 python retry_server_errors.py
 ```
 
-**2. 초기화하기 (새 프로젝트 시작)**
+**2. 단일 파일만 콕 집어서 다시 분석하기**
+특정 소스 파일의 내용이 변경되었거나, 전체를 돌리지 않고 딱 한 파일만 다시 분석해보고 싶을 때 사용합니다. `--force` 옵션을 주면 기존 결과를 덮어씁니다.
+```bash
+python analyze_single.py --file "monolith_source/src/main/java/com/example/UserController.java" --force
+```
+
+**3. 초기화하기 (새 프로젝트 시작)**
 다른 프로젝트의 소스 코드를 분석하고 싶거나, 결과를 싹 지우고 처음부터 다시 하고 싶다면 아래 명령어를 입력하세요. 깔끔하게 모든 로그와 결과물을 청소해 줍니다.
 ```bash
 python clean.py

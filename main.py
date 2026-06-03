@@ -227,6 +227,11 @@ def create_zip_archive() -> None:
 
 
 def main() -> None:
+    # 프로그램 실행 시 필수 디렉토리 자동 생성
+    os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
+    os.makedirs(RESULT_DIR, exist_ok=True)
+    os.makedirs("./templates", exist_ok=True)
+    
     print(f"소스 코드 디렉토리 '{SOURCE_DIRECTORY}'에서 분석을 시작합니다...\n")
     
     target_files = get_target_files(SOURCE_DIRECTORY, exclude_paths=EXCLUDE_PATHS)
