@@ -312,12 +312,12 @@ def main() -> None:
     # 통합 아키텍처 요약본 생성 (CSV 데이터 활용)
     generate_architecture_summary()
     
+    # API 엔드포인트로 Swagger 파일 자동 생성
+    generate_swagger.main()
+
     # HTML 리포트 및 통합 마크다운 문서 생성
     generate_report.main(stats)
     merge_reports.main()
-
-    # API 엔드포인트로 Swagger 파일 자동 생성
-    generate_swagger.main()
 
     # 모든 결과물을 ZIP으로 압축
     create_zip_archive()

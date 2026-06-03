@@ -6,6 +6,8 @@
     <title>MSA Analysis Report</title>
     <!-- GitHub 마크다운 스타일 CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
+    <!-- Swagger UI CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
         #sidebar { width: 350px; background-color: #f6f8fa; border-right: 1px solid #d0d7de; overflow-y: auto; display: flex; flex-direction: column; }
@@ -88,6 +90,9 @@
             {% if summary_content %}
             <button onclick="showSummary()" style="width: 100%; margin-top: 10px; padding: 8px; background-color: #2da44e; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">🌟 전체 요약 아키텍처 보기</button>
             {% endif %}
+            {% if swagger_content %}
+            <button onclick="showSwaggerUI()" style="width: 100%; margin-top: 5px; padding: 8px; background-color: #89e051; color: #24292f; border: 1px solid #2da44e; border-radius: 6px; cursor: pointer; font-weight: bold;">📖 OpenAPI (Swagger) 명세서 보기</button>
+            {% endif %}
             <input type="text" id="search-input" placeholder="키워드 검색 (예: 트랜잭션, 강결합)..." onkeyup="filterReports()">
         </div>
         <div id="tabs">
@@ -112,6 +117,8 @@
                 </div>
             {% endif %}
         </div>
+        <!-- Swagger UI 컨테이너 (기본 숨김) -->
+        <div id="swagger-ui" style="display: none;"></div>
     </div>
 
     <!-- 이미지 확대 팝업 모달 -->
@@ -125,8 +132,13 @@
         {% for report in reports %}
         <textarea id="md-{{ loop.index }}">{{ report.content | escape }}</textarea>
         {% endfor %}
+        {% if swagger_content %}
+        <textarea id="swagger-json-data">{{ swagger_content | escape }}</textarea>
+        {% endif %}
     </div>
 
+    <!-- Swagger UI JS -->
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const summaryEl = document.getElementById('summary-md');
@@ -142,6 +154,8 @@
             document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
             const summaryEl = document.getElementById('summary-md');
             if (summaryEl) {
+                document.getElementById('swagger-ui').style.display = 'none';
+                document.getElementById('report-view').style.display = 'block';
                 document.getElementById('report-view').innerHTML = marked.parse(summaryEl.value);
                 document.getElementById('content').scrollTop = 0;
                 addCopyButtons();
@@ -154,11 +168,41 @@
             document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
             document.getElementById('menu-' + index).classList.add('active');
             const mdContent = document.getElementById('md-' + index).value;
+            
+            document.getElementById('swagger-ui').style.display = 'none';
+            document.getElementById('report-view').style.display = 'block';
             document.getElementById('report-view').innerHTML = marked.parse(mdContent);
             document.getElementById('content').scrollTop = 0;
+            
             addCopyButtons();
             addImageClickListeners();
             renderMermaid();
+        }
+        
+        function showSwaggerUI() {
+            document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
+            document.getElementById('report-view').style.display = 'none';
+            document.getElementById('swagger-ui').style.display = 'block';
+            
+            const swaggerDataEl = document.getElementById('swagger-json-data');
+            if (swaggerDataEl) {
+                try {
+                    const spec = JSON.parse(swaggerDataEl.value);
+                    window.ui = SwaggerUIBundle({
+                        spec: spec,
+                        dom_id: '#swagger-ui',
+                        deepLinking: true,
+                        presets: [
+                            SwaggerUIBundle.presets.apis,
+                            SwaggerUIBundle.SwaggerUIStandalonePreset
+                        ],
+                        layout: "BaseLayout"
+                    });
+                } catch(e) {
+                    console.error("Swagger JSON 파싱 에러:", e);
+                }
+            }
+            document.getElementById('content').scrollTop = 0;
         }
 
         function addImageClickListeners() {

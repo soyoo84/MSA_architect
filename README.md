@@ -10,6 +10,7 @@
 이 도구는 단순한 코드 분석을 넘어 다음과 같은 심층적인 아키텍처 가이드를 제공합니다:
 - **도메인 주도 설계(DDD) 기반 Bounded Context 정의**: 비즈니스 프로세스(LV1~LV5)에 따라 코드를 분류하고 Aggregate Root를 식별합니다.
 - **물리적 DB 분리 및 정합성 전략**: MSA의 핵심인 데이터베이스의 물리적 분리를 위해 FK(외래 키) 단절 전략을 제시하고, Saga 패턴 및 트랜잭셔널 아웃박스(Transactional Outbox) 등을 활용한 데이터 정합성 보장 방안을 가이드합니다.
+- **To-Be MSA API (Event Storming) 자동 추출**: 레거시의 단순한 호출 로직을 그대로 가져오지 않고, Event Storming 관점(Command, Query 분리)에서 식별된 Bounded Context에 맞춰 재설계된 **To-Be REST API 명세서(Swagger/OpenAPI)**를 자동 생성합니다.
 - **UML 표준 시각화**: 텍스트 형태의 요약을 넘어, 추출된 Bounded Context 내의 엔티티(Entity) 및 연관관계를 **UML 클래스 다이어그램** 형태로 브라우저에서 바로 확인할 수 있도록 자동 시각화(Mermaid.js)합니다.
 
 ---

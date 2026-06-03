@@ -45,6 +45,11 @@ def main(stats: Optional[Dict[str, Any]] = None) -> None:
 
     analysis_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    swagger_content = None
+    if os.path.exists("swagger.json"):
+        with open("swagger.json", "r", encoding="utf-8") as f:
+            swagger_content = f.read()
+
     # Jinja2 환경 구성 및 HTML 렌더링
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template("report_template.html")
@@ -53,7 +58,8 @@ def main(stats: Optional[Dict[str, Any]] = None) -> None:
         summary_content=summary_content,
         analysis_date=analysis_date,
         source_directory=SOURCE_DIRECTORY,
-        stats=stats
+        stats=stats,
+        swagger_content=swagger_content
     )
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:

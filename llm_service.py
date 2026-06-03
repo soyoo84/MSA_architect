@@ -75,7 +75,7 @@ async def analyze_with_qwen(source_code: str, is_chunk: bool = False, chunk_info
             2. **물리적 분리를 위한 컨텍스트 디커플링**: 서로 다른 Bounded Context 간의 강결합된 객체 참조나 서비스 호출, DB 조인 등을 찾아내어, 독립적인 마이크로서비스로 완전히 분리하기 위한 리팩토링 방안 지적 (의존 대상, 대상 도메인, 의존 사유를 마크다운 표(Table) 형식으로 정리할 것).
             3. **데이터 정합성 보장 방안**: 분리된 서비스 간 트랜잭션 처리를 위해 API 호출 대신 Saga 패턴, 트랜잭셔널 아웃박스, 이벤트 발행/구독(Pub/Sub) 등을 활용하는 방안 제시.
             4. 의존성 관계가 있다면 반드시 ```mermaid ... ``` 마크다운 코드 블록 안에 Mermaid 문법으로 다이어그램 작성 (없으면 생략).
-            5. 만약 REST API(Controller 등) 엔드포인트가 포함되어 있다면, API 엔드포인트, HTTP Method, 설명/상세를 마크다운 표(Table) 형식으로 추가 정리할 것.
+            5. **To-Be MSA API 설계 (Event Storming 관점)**: 현재 모놀리식 소스의 호출 및 비즈니스 로직을 바탕으로, 단순 As-Is 추출이 아닌 식별된 Bounded Context에 맞춰 도메인 주도(To-Be MSA) REST API 엔드포인트를 재설계하여 마크다운 표(Table)로 제시할 것 (Command/Query 분리, 이벤트 등 이벤트 스토밍 관점 반영. 헤더: API Endpoint, Method, 설명/상세).
             {global_context}
             
             [소스 코드 조각]
@@ -89,7 +89,7 @@ async def analyze_with_qwen(source_code: str, is_chunk: bool = False, chunk_info
             2. **물리적 분리를 위한 컨텍스트 디커플링**: 서로 다른 Bounded Context 간의 강결합된 객체 참조나 서비스 호출, DB 조인 등 타 도메인과의 강결합 부분 분석 (의존 대상, 대상 도메인, 의존 사유를 마크다운 표(Table) 형식으로 정리할 것).
             3. **데이터 정합성 보장 방안 및 리팩토링 제안**: 분리된 서비스 간 트랜잭션 처리를 위해 API 조회를 넘어 Saga 패턴, 트랜잭셔널 아웃박스, 이벤트 발행/구독(Pub/Sub) 패턴 등을 활용하는 방안 제시.
             4. **UML 도메인 모델 다이어그램**: 도메인 주요 개념, Aggregate Root, 그리고 객체 간의 연관관계를 표준화된 UML 클래스 다이어그램 형태로 시각화할 것 (반드시 ```mermaid\nclassDiagram\n...``` 형태의 Mermaid 문법을 사용할 것).
-            5. 만약 REST API(Controller 등) 엔드포인트가 포함되어 있다면, API 엔드포인트, HTTP Method, 설명/상세를 마크다운 표(Table) 형식으로 추가 정리할 것.
+            5. **To-Be MSA API 설계 (Event Storming 관점)**: 현재 모놀리식 소스의 호출 및 비즈니스 로직을 바탕으로, 단순 As-Is 추출이 아닌 식별된 Bounded Context에 맞춰 도메인 주도(To-Be MSA) REST API 엔드포인트를 재설계하여 마크다운 표(Table)로 제시할 것 (Command/Query 분리, 이벤트 등 이벤트 스토밍 관점 반영. 헤더: API Endpoint, Method, 설명/상세).
 
             [소스 코드]
             {source_code}
@@ -141,7 +141,7 @@ async def summarize_chunks_with_qwen(chunk_results_text: str, file_name: str) ->
     2. **물리적 DB 분리 전략**: 타 도메인과의 강결합 부분(FK 포함) 및 문제점 종합 (개별 청크에서 식별된 외부 참조 FK 관계들을 연결하여 복원하되, 서로 다른 Bounded Context 간의 물리적 FK 제약조건은 제거하는 방향으로 아키텍처를 제시하고 의존 대상, 대상 도메인, 의존 사유를 마크다운 표(Table) 형식으로 정리할 것)
     3. **데이터 마이그레이션 및 정합성 보장 제안**: 마이그레이션 우선순위(Phase 1, 2, 3) 및 물리적 분리 이후의 데이터 일관성을 위한 MSA 아키텍처 리팩토링 제안 (트랜잭셔널 아웃박스, Saga, CQRS, 이벤트 기반 동기화 등 구체적 패턴 제시)
     4. 전체 파일 수준의 의존성 관계 다이어그램 (반드시 ```mermaid ... ``` 마크다운 코드 블록 안에 Mermaid 문법으로 작성할 것)
-    5. 발견된 REST API 엔드포인트가 있다면 모두 취합하여 마크다운 표(Table) 형식으로 정리할 것 (헤더: API Endpoint, Method, 설명/상세)
+    5. **To-Be MSA API 설계 (Event Storming 관점)**: 개별 청크에서 발견된 API/비즈니스 호출을 모두 취합하여, 식별된 Bounded Context에 맞춘 To-Be REST API로 재정규화하여 마크다운 표(Table)로 제시할 것 (Command/Query 분리, 이벤트 등 이벤트 스토밍 관점 반영. 헤더: API Endpoint, Method, 설명/상세).
 
     [개별 청크 분석 결과 모음]
     {chunk_results_text}
