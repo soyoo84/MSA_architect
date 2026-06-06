@@ -39,7 +39,7 @@ def main():
         except Exception as e:
             print(f"  - 디렉토리 삭제 실패 ({result_dir}): {e}")
 
-    print("✨ 모든 산출물이 정리되었습니다! 깨끗한 상태에서 다시 분석을 시작할 수 있습니다.")
+    print("✨ 현재 워크스페이스의 산출물이 정리되었습니다! (단, history/ 폴더의 백업본은 안전하게 유지됩니다.)\n깨끗한 상태에서 다시 분석을 시작할 수 있습니다.")
 
 if __name__ == "__main__":
     main()

@@ -16,7 +16,8 @@ import generate_report
 import merge_reports
 import extract_csv
 import generate_swagger
-import zipfile
+import shutil
+from datetime import datetime
 
 RESULT_DIR = "./analysis_results"
 
@@ -37,9 +38,22 @@ def process_file(file_path: str) -> str:
     if os.path.exists(result_file):
         return f"[SKIP] 이미 분석됨: {file_name}"
 
-    with open(file_path, 'r', encoding='utf-8') as f:
-        source_code = f.read()
-        
+    source_code = ""
+    try:
+        # 1차 시도: 기본 UTF-8 인코딩으로 읽기
+        with open(file_path, 'r', encoding='utf-8') as f:
+            source_code = f.read()
+    except UnicodeDecodeError:
+        try:
+            # 2차 시도: 레거시 시스템에서 자주 쓰이는 EUC-KR/CP949 인코딩으로 읽기
+            with open(file_path, 'r', encoding='cp949') as f:
+                source_code = f.read()
+        except UnicodeDecodeError:
+            # 3차 시도: 둘 다 실패할 경우, 에러가 나는 문자는 대체 문자(?)로 무시하고 강제 읽기
+            logging.warning(f"인코딩 감지 실패. 특수 문자를 무시하고 강제로 읽습니다: {file_name}")
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                source_code = f.read()
+                
     line_count = source_code.count('\n') + 1
     needs_chunking = False
     
@@ -105,12 +119,27 @@ def process_file(file_path: str) -> str:
         for i, result in enumerate(chunk_responses):
             if isinstance(result, Exception):
                 e = result
+                error_msg = ""
                 if isinstance(e, (openai.APIConnectionError, openai.APIStatusError, openai.APITimeoutError)):
                     logging.error(f"🚨 청크 분석 중 서버 다운 의심 ({file_name} - {i+1}): {e}", exc_info=e)
-                    raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n> 🚨 LLM 서버 장애 (VRAM OOM 등)로 분석 실패\n\n")
+                    error_msg = f"> 🚨 LLM 서버 장애 (VRAM OOM 등)로 분석 실패 (에러: {e})"
                 else:
                     logging.error(f"청크 분석 실패 ({file_name} - {i+1}): {e}", exc_info=e)
-                    raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n> ⚠️ LLM 분석 실패 (토큰 초과 또는 오류): {e}\n\n")
+                    error_msg = f"> ⚠️ LLM 분석 실패 (토큰 초과 또는 오류) (에러: {e})"
+                
+                # [방어 로직] DDL 파일 분석 실패 시, 시스템 전체 분석 파이프라인 누락을 방지하기 위해 정규식으로 테이블명 강제 추출
+                if file_name.endswith(".sql"):
+                    from parser import extract_sql_object_names
+                    fallback_objects = extract_sql_object_names(chunks[i])
+                    if fallback_objects:
+                        fallback_table = "| 구분 | 객체명 | 프로세스 체계(LV1~LV5) | 도메인(Bounded Context) | 애그리거트 루트 | 마이그레이션 우선순위 | 설명/상세 |\n|---|---|---|---|---|---|---|\n"
+                        for obj in fallback_objects:
+                            fallback_table += f"| Table | {obj} | Unknown | Unknown | Unknown | Low | [Fallback] LLM 분석 실패로 정규식 기반 자동 추출됨 |\n"
+                        raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n{error_msg}\n> 🛡️ **[방어 로직 가동]** 중요 스키마 누락을 방지하기 위해 기초 테이블명만 정규식으로 강제 추출하여 매핑을 유지합니다.\n\n{fallback_table}\n\n")
+                    else:
+                        raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n{error_msg}\n> (추출 가능한 테이블 객체 없음)\n\n")
+                else:
+                    raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n{error_msg}\n\n")
             else:
                 raw_chunk_parts.append(f"### 🧩 Part {i+1}/{len(chunks)}\n{result}\n\n")
                 
@@ -145,13 +174,14 @@ def generate_architecture_summary() -> None:
         print("\n[SKIP] 전체 요약 아키텍처 가이드가 이미 존재합니다.")
         return
 
-    print("\n추출된 도메인/프로세스(CSV) 데이터를 바탕으로 전체 요약 아키텍처 가이드를 생성합니다...")
+    print("\n추출된 도메인 및 의존성(CSV) 데이터를 바탕으로 전체 요약 아키텍처 가이드를 생성합니다...")
     
     import csv
     from collections import defaultdict
     
-    # Process Level -> Domain -> set(Aggregate Roots)
+    # 1. 파일-도메인 매핑 딕셔너리 및 프로세스-도메인 계층 구조 생성
     hierarchy = defaultdict(lambda: defaultdict(set))
+    file_to_domain = {}
     mapping_csv = "domain_table_mapping.csv"
     
     if os.path.exists(mapping_csv):
@@ -159,6 +189,7 @@ def generate_architecture_summary() -> None:
             with open(mapping_csv, "r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    src_file = row.get("Source File", "").strip()
                     pl = row.get("Process Level", "Unknown").strip()
                     domain = row.get("Domain", "Unknown").strip()
                     ar = row.get("Aggregate Root", "").strip()
@@ -166,14 +197,16 @@ def generate_architecture_summary() -> None:
                     if not pl: pl = "Unknown"
                     if not domain: domain = "Unknown"
                     
+                    if src_file:
+                        file_to_domain[src_file] = domain
+                    
                     if ar and ar.lower() not in ['n/a', 'none', '-', '']:
                         hierarchy[pl][domain].add(ar)
                     else:
-                        # Aggregate Root가 없더라도 도메인은 등록
                         if domain not in hierarchy[pl]:
                             hierarchy[pl][domain] = set()
         except Exception as e:
-            logging.error(f"CSV 읽기 실패: {e}")
+            logging.error(f"Mapping CSV 읽기 실패: {e}")
             
     context_lines = ["[To-Be MSA 프로세스 체계 및 도메인 구조 요약]"]
     for pl, domains in sorted(hierarchy.items()):
@@ -181,10 +214,44 @@ def generate_architecture_summary() -> None:
         for dom, ars in sorted(domains.items()):
             ar_str = ", ".join(sorted(ars)) if ars else "정의되지 않음"
             context_lines.append(f"  - Bounded Context: {dom} | Aggregate Roots: [{ar_str}]")
+
+    # 2. 크로스-도메인 의존성(Coupling) 맵 생성
+    cross_domain_coupling = defaultdict(list)
+    dependency_csv = "service_dependencies.csv"
+    
+    if os.path.exists(dependency_csv):
+        try:
+            with open(dependency_csv, "r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    src_file = row.get("Source File", "").strip()
+                    target_domain = row.get("Target Domain", "Unknown").strip()
+                    reason = row.get("Reason / Details", "").strip()
+
+                    src_domain = file_to_domain.get(src_file, "Unknown").strip()
+
+                    # 동일 도메인 내부 의존성은 제외하고 "타 도메인 결합"만 수집
+                    if src_domain and target_domain and src_domain != target_domain and target_domain.lower() not in ["none", "n/a", "", "unknown"]:
+                        # 사유가 너무 길어지는 것을 방지하기 위해 도메인 쌍당 최대 3개까지만 대표 케이스로 수집 (토큰 보호)
+                        if len(cross_domain_coupling[(src_domain, target_domain)]) < 3:
+                            cross_domain_coupling[(src_domain, target_domain)].append(reason)
+        except Exception as e:
+            logging.error(f"Dependency CSV 읽기 실패: {e}")
+
+    context_lines.append("\n\n[타 Bounded Context 간 강결합(Coupling) 및 물리적 의존성 현황]")
+    if cross_domain_coupling:
+        for (src, tgt), reasons in sorted(cross_domain_coupling.items()):
+            context_lines.append(f"\n■ [{src}] ➔ [{tgt}] 의존")
+            for r in reasons:
+                # 텍스트 길이 제한 (토큰 보호)
+                short_r = r[:100] + "..." if len(r) > 100 else r
+                context_lines.append(f"  - 사유/상세: {short_r}")
+    else:
+        context_lines.append("\n  - 타 Bounded Context 간 강결합 내역 없음")
             
     combined_text = "\n".join(context_lines)
     
-    # 데이터가 너무 방대한 경우에도 LLM 토큰을 보호 (CSV 기반이므로 텍스트량이 획기적으로 적음)
+    # 데이터가 너무 방대한 경우에도 LLM 토큰을 보호 (CSV Grouping이므로 텍스트량이 획기적으로 적음)
     if len(combined_text) > 30000:
         combined_text = combined_text[:30000] + "\n... (데이터가 너무 방대하여 일부가 생략되었습니다) ..."
         
@@ -203,27 +270,39 @@ def generate_architecture_summary() -> None:
         logging.error("전체 요약 아키텍처 가이드 생성 중 오류 발생", exc_info=True)
 
 
-def create_zip_archive() -> None:
-    """최종 분석 결과물과 리포트 파일들을 팀원 공유용 ZIP 파일로 압축합니다."""
-    zip_filename = "msa_analysis_output.zip"
-    print(f"\n최종 결과물들을 팀원 공유용 파일({zip_filename})로 압축합니다...")
+def save_to_history_folder() -> None:
+    """최종 분석 결과물과 리포트 파일들을 날짜별 히스토리 폴더에 복사하여 보관합니다."""
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    history_dir = os.path.join("history", now_str)
+    
+    print(f"\n최종 결과물들을 히스토리 폴더({history_dir})에 저장합니다...")
+    os.makedirs(history_dir, exist_ok=True)
     
     try:
-        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # 1. 개별 분석 결과 마크다운 및 SVG 다이어그램 포함 (os.walk 대신 os.scandir 사용으로 속도 최적화)
-            with os.scandir(RESULT_DIR) as it:
-                for entry in it:
-                    if entry.is_file():
-                        arcname = os.path.relpath(entry.path, ".")
-                        zipf.write(entry.path, arcname)
-            # 2. 루트 디렉토리의 생성된 리포트 및 로그 파일들 포함
-            for report in ["msa_analysis_report.html", "msa_analysis_report.pdf", "merged_msa_report.md", "domain_table_mapping.csv", "service_dependencies.csv", "api_endpoints.csv", "swagger.json", "error.log", "skipped_files.log"]:
-                if os.path.exists(report):
-                    zipf.write(report)
-        print(f"✨ 압축 완료: {zip_filename} (이 파일을 팀원들과 공유하세요!)")
+        # 1. 개별 분석 결과 마크다운 폴더 복사
+        dest_analysis_dir = os.path.join(history_dir, f"analysis_results_{now_str}")
+        if os.path.exists(RESULT_DIR):
+            shutil.copytree(RESULT_DIR, dest_analysis_dir)
+            
+        # 2. 루트 디렉토리의 리포트 및 로그 파일들 복사 (이름에 날짜 추가)
+        reports = {
+            "msa_analysis_report.html": f"msa_analysis_report_{now_str}.html",
+            "merged_msa_report.md": f"merged_msa_report_{now_str}.md",
+            "domain_table_mapping.csv": f"domain_table_mapping_{now_str}.csv",
+            "service_dependencies.csv": f"service_dependencies_{now_str}.csv",
+            "api_endpoints.csv": f"api_endpoints_{now_str}.csv",
+            "swagger.json": f"swagger_{now_str}.json",
+            "error.log": f"error_{now_str}.log",
+            "skipped_files.log": f"skipped_files_{now_str}.log"
+        }
+        for src, dst in reports.items():
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(history_dir, dst))
+                
+        print(f"✨ 히스토리 저장 완료: {history_dir} (이전 분석 버전과 비교용으로 사용하세요!)")
     except Exception as e:
-        print(f"[ERROR] ZIP 압축 중 오류 발생: {e}")
-        logging.error("ZIP 파일 생성 중 오류 발생", exc_info=True)
+        print(f"[ERROR] 히스토리 폴더 저장 중 오류 발생: {e}")
+        logging.error("히스토리 폴더 저장 중 오류 발생", exc_info=True)
 
 
 def main() -> None:
@@ -324,8 +403,8 @@ def main() -> None:
     generate_report.main(stats)
     merge_reports.main()
 
-    # 모든 결과물을 ZIP으로 압축
-    create_zip_archive()
+    # 모든 결과물을 날짜별 히스토리 폴더에 저장
+    save_to_history_folder()
 
 if __name__ == "__main__":
     main()

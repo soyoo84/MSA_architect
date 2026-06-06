@@ -6,11 +6,11 @@ from typing import List, Optional
 # XML 태그 분할용 정규식을 모듈 레벨에서 한 번만 컴파일하여 반복 호출 시 CPU 부하 감소
 XML_TAG_PATTERN = re.compile(r'^\s*<(select|insert|update|delete|sql|resultMap)\b', re.IGNORECASE)
 
-# DDL(SQL) 테이블 분할용 정규식 컴파일
-SQL_TAG_PATTERN = re.compile(r'^\s*(CREATE\s+(OR\s+REPLACE\s+)?(UNIQUE\s+)?(TABLE|VIEW|PROCEDURE|FUNCTION|TRIGGER|INDEX)|ALTER\s+TABLE)\b', re.IGNORECASE)
+# DDL(SQL) 테이블 분할용 정규식 컴파일 (오라클 특화 패키지, 시퀀스, 구체화 뷰 등 포함)
+SQL_TAG_PATTERN = re.compile(r'^\s*(CREATE\s+(OR\s+REPLACE\s+)?(UNIQUE\s+|GLOBAL\s+TEMPORARY\s+)?(TABLE|VIEW|MATERIALIZED\s+VIEW|PROCEDURE|FUNCTION|TRIGGER|INDEX|PACKAGE(\s+BODY)?|SEQUENCE|SYNONYM)|ALTER\s+(TABLE|VIEW|PROCEDURE|FUNCTION|TRIGGER|PACKAGE|SEQUENCE|SYNONYM))\b', re.IGNORECASE)
 
-# DDL 객체명 추출용 정규식 컴파일 (멀티라인 적용)
-SQL_OBJECT_PATTERN = re.compile(r'^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:UNIQUE\s+)?(?:TABLE|VIEW|PROCEDURE|FUNCTION|TRIGGER|INDEX)|ALTER\s+TABLE)\s+([a-zA-Z0-9_`"\'\.]+)', re.IGNORECASE | re.MULTILINE)
+# DDL 객체명 추출용 정규식 컴파일 (멀티라인 적용, 오라클 특화 패턴 포함)
+SQL_OBJECT_PATTERN = re.compile(r'^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:UNIQUE\s+|GLOBAL\s+TEMPORARY\s+)?(?:TABLE|VIEW|MATERIALIZED\s+VIEW|PROCEDURE|FUNCTION|TRIGGER|INDEX|PACKAGE(?:\s+BODY)?|SEQUENCE|SYNONYM)|ALTER\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION|TRIGGER|PACKAGE|SEQUENCE|SYNONYM))\s+([a-zA-Z0-9_`"\'\.]+)', re.IGNORECASE | re.MULTILINE)
 
 # javalang 패키지 로드 여부를 모듈 로드 시 1회만 체크하여 반복적인 import 오버헤드 제거
 try:

@@ -150,17 +150,27 @@
             }
         });
 
+        function safeRenderMarkdown(content, elementId) {
+            try {
+                const element = document.getElementById(elementId);
+                element.innerHTML = marked.parse(content);
+            } catch (e) {
+                console.error("Markdown 파싱 에러:", e);
+                document.getElementById(elementId).innerHTML = "<p>Markdown 렌더링 중 오류가 발생했습니다.</p><pre>" + content + "</pre>";
+            }
+        }
+
         function showSummary() {
             document.querySelectorAll('#file-list li').forEach(li => li.classList.remove('active'));
             const summaryEl = document.getElementById('summary-md');
             if (summaryEl) {
                 document.getElementById('swagger-ui').style.display = 'none';
                 document.getElementById('report-view').style.display = 'block';
-                document.getElementById('report-view').innerHTML = marked.parse(summaryEl.value);
+                safeRenderMarkdown(summaryEl.value, 'report-view');
                 document.getElementById('content').scrollTop = 0;
                 addCopyButtons();
                 addImageClickListeners();
-                renderMermaid();
+                setTimeout(renderMermaid, 100);
             }
         }
 
@@ -171,12 +181,12 @@
             
             document.getElementById('swagger-ui').style.display = 'none';
             document.getElementById('report-view').style.display = 'block';
-            document.getElementById('report-view').innerHTML = marked.parse(mdContent);
+            safeRenderMarkdown(mdContent, 'report-view');
             document.getElementById('content').scrollTop = 0;
             
             addCopyButtons();
             addImageClickListeners();
-            renderMermaid();
+            setTimeout(renderMermaid, 100);
         }
         
         function showSwaggerUI() {

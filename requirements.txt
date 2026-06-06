@@ -27,3 +27,6 @@ Pebble>=5.0.3
 
 # 데이터베이스에 접속하여 DDL을 추출하기 위한 ORM 프레임워크
 SQLAlchemy>=2.0.27
+
+# 오라클 데이터베이스 접속용 드라이버 (cx_Oracle의 최신 버전, Instant Client 불필요)
+oracledb>=2.1.0

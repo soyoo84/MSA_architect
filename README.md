@@ -30,7 +30,7 @@
    * **글로벌 요약 최적화**: 1,700여 개가 넘는 대규모 파일을 전체 요약할 때 텍스트를 무식하게 합치지 않습니다. 개별 파일에서 도출된 정보(프로세스 레벨, 도메인, Aggregate Root)를 **CSV 형태(`domain_table_mapping.csv`)로 먼저 추출한 뒤, 트리 맵 형태로 극도로 압축**하여 LLM에 전달합니다. 이를 통해 초대규모 프로젝트도 거시적인 MSA 글로벌 요약 다이어그램을 성공적으로 그려냅니다.
 4. **산출물 및 시각화 자동화 (Reporting)**
    * 생성된 마크다운을 하나로 합치고(`merge_reports.py`), 웹 브라우저에서 UML 클래스 다이어그램을 인터랙티브하게 볼 수 있는 HTML 리포트(`generate_report.py`)를 렌더링합니다.
-   * 분석된 API 엔드포인트를 모아 Swagger 규격 파일(`generate_swagger.py`)까지 만들어 낸 후, 이 모든 것을 `msa_analysis_output.zip`으로 압축합니다.
+   * 분석된 API 엔드포인트를 모아 Swagger 규격 파일(`generate_swagger.py`)까지 만들어 낸 후, 이 모든 것을 날짜별 히스토리 폴더(`history/YYYYMMDD_HHMMSS`)에 보관하여 과거 분석본과 비교할 수 있도록 합니다.
 
 ---
 
@@ -58,8 +58,9 @@ MSA_architect/
 │   └── report_template.html    # 웹 리포트 렌더링용 HTML 템플릿
 ├── monolith_source/            # 📂 (자동생성) 분석할 레거시 소스 코드를 넣는 곳
 │   └── schema.sql              # (자동추출) DB 스키마 파일
-├── analysis_results/           # 📂 (자동생성) 개별 분석 마크다운 결과물 저장소
-└── msa_analysis_output.zip     # 📦 (최종결과) 모든 분석 산출물이 압축된 공유용 파일
+├── analysis_results/           # 📂 (자동생성) 개별 분석 마크다운 결과물 임시 저장소
+└── history/                    # 📂 (자동생성) 날짜/시간별 최종 산출물 아카이브 폴더
+    └── 20260603_153000/        # 📦 이 폴더 안에 파일명에 날짜가 붙어 안전하게 보관됨!
 ```
 
 ---
@@ -84,9 +85,8 @@ SOURCE_DIRECTORY=C:/workspace/legacy_project/src
 
 # 2. 데이터베이스 스키마(DDL) 자동 추출을 위한 DB 접속 URL (필수 아님, DB 연동 시에만)
 # 형태: [DB종류]+[드라이버]://[아이디]:[비밀번호]@[주소]:[포트]/[DB명]
-# MySQL 예시: mysql+pymysql://root:1234@localhost:3306/legacy_db
-# Oracle 예시: oracle+cx_oracle://admin:1234@192.168.0.10:1521/?service_name=orcl
-DB_URL=mysql+pymysql://root:1234@localhost:3306/legacy_db
+# Oracle 예시: oracle+oracledb://admin:1234@192.168.0.10:1521/?service_name=orcl
+DB_URL=oracle+oracledb://admin:1234@192.168.0.10:1521/?service_name=orcl
 
 # 3. 사내 AI(LLM) 접근 키
 LLM_BASE_URL=http://your-internal-llm-server/v1
@@ -107,7 +107,7 @@ ASYNC_CHUNK_CONCURRENCY_SQL=1
 MSA 전환 시 데이터베이스 분리 설계는 가장 중요합니다. 프로그램이 DB를 분석할 수 있도록 코드가 있는 폴더(`SOURCE_DIRECTORY`) 안에 `.sql` 파일을 만들어 주어야 합니다.
 
 `.env`에 `DB_URL`을 설정해 두었다면, 터미널에서 명령어 한 줄로 DB에 직접 접속해 자동으로 `.sql` 파일을 만들어낼 수 있습니다.
-*(DB 종류에 따라 `pip install pymysql` 또는 `pip install cx_Oracle`이 선행되어야 합니다.)*
+*(미리 `pip install oracledb` 등의 드라이버 설치가 선행되어야 합니다.)*
 
 ```bash
 # 기본 실행 (.env의 DB_URL 설정값을 읽어서 소스 폴더에 schema.sql을 자동 생성)
@@ -126,17 +126,29 @@ python main.py
 
 ---
 
-## 🎁 결과물 확인하기 (Outputs)
+## 🎁 결과물 확인 및 100% 활용하기 (Outputs & Use Cases)
 
-파이프라인이 100% 완료되면 화면에 성공률이 뜨면서 프로젝트 폴더에 `msa_analysis_output.zip` 이라는 압축 파일이 생성됩니다. 이 파일을 압축 해제하면 다음의 보물 같은 산출물들을 확인할 수 있습니다.
+파이프라인이 100% 완료되면 화면에 성공률이 뜨면서 프로젝트의 `history/YYYYMMDD_HHMMSS/` 폴더 안에 최종 산출물들이 날짜별로 안전하게 보관됩니다. 이 폴더를 열면 단순 텍스트가 아닌 실제 MSA 전환 프로젝트에 즉시 투입 가능한 다음과 같은 강력한 산출물들을 만날 수 있습니다.
 
-1. **`msa_analysis_report.html` (가장 중요 ⭐)**
-   * 마우스를 더블 클릭하여 웹 브라우저(Chrome 등)로 여세요.
-   * 왼쪽 목차를 클릭하여 개별 파일의 분석 결과를 볼 수 있으며, 화면에 **UML 클래스 다이어그램**이 예쁘게 그려진 것을 볼 수 있습니다.
-2. **`domain_table_mapping.csv` 외 CSV 파일 3종**
-   * 엑셀로 열어보시면 전체 소스 코드가 어떤 비즈니스 프로세스(LV1~LV5)와 도메인(Bounded Context)으로 맵핑되어 있는지 표 형태로 깔끔하게 정리되어 있습니다. (마이그레이션 우선순위 도출용)
-3. **`swagger.json`**
-   * 레거시 코드 내부에 숨어있던 API 호출 엔드포인트들을 찾아내어 OpenAPI(Swagger) 규격으로 만들어 줍니다. Swagger UI에 드래그 앤 드롭해서 시각적으로 확인하세요.
+### 1. `msa_analysis_report.html` (통합 아키텍처 대시보드 ⭐)
+* **어떤 내용인가요?**: 1,700여 개의 마크다운 결과를 하나의 웹 페이지로 예쁘게 렌더링한 인터랙티브 문서입니다.
+* **어떻게 활용하나요?**:
+   * **[🌟 전체 요약 아키텍처 보기] 버튼**: 경영진이나 아키텍트 그룹에 보고할 때 씁니다. 시스템 전체를 관통하는 Bounded Context 맵과 거시적인 **UML 클래스 다이어그램**이 렌더링되어 있어, "우리가 시스템을 어떻게 쪼갤 것인가"에 대한 전체적인 청사진을 브라우저에서 바로 브리핑할 수 있습니다.
+   * **좌측 파일 목록 및 검색창**: 개발자가 특정 소스(`UserController.java`)를 어떻게 뜯어고쳐야 할지 막막할 때 검색해서 클릭합니다. 해당 소스에 얽힌 강결합(FK)을 끊어내고 Saga 패턴 등을 적용하는 구체적인 코드 레벨 리팩토링 가이드를 볼 수 있습니다.
+
+### 2. `domain_table_mapping.csv` (도메인-테이블 맵핑 정의서)
+* **어떤 내용인가요?**: 분석된 모든 소스와 테이블이 비즈니스 프로세스(LV1~LV5) 및 어느 Bounded Context(도메인)에 속해야 하는지, 그리고 Aggregate Root는 무엇인지가 표로 정리되어 있습니다.
+* **어떻게 활용하나요?**: **데이터베이스 분리 및 마이그레이션 우선순위 산정**에 씁니다. 이 파일을 엑셀로 열어 '도메인' 컬럼으로 필터링하면, 예를 들어 "주문(Order) 마이크로서비스를 만들 때 어떤 기존 테이블들을 물리적으로 떼어내서 가져가야 하는지" 한눈에 리스트업이 가능합니다.
+
+### 3. `service_dependencies.csv` (크로스-도메인 강결합 명세서)
+* **어떤 내용인가요?**: 서로 다른 Bounded Context 간에 발생하고 있는 치명적인 강결합(직접적인 DB JOIN, 물리적 FK 제약조건, 타 서비스 서비스 로직 직접 호출 등) 내역만 쏙쏙 뽑아놓은 문서입니다.
+* **어떻게 활용하나요?**: **리팩토링 공수 산정 및 아웃박스/Saga 패턴 도입 타겟팅**에 씁니다. 이 엑셀 표에 나온 의존성들은 MSA 전환 시 반드시 끊어내고 비동기 이벤트(Kafka 등)로 대체해야 하는 "기술 부채" 목록입니다. 개발팀의 리팩토링 TO-DO 리스트로 바로 사용할 수 있습니다.
+
+### 4. `api_endpoints.csv` & `swagger.json` (To-Be API 명세서)
+* **어떤 내용인가요?**: 레거시에 하드코딩된 호출 방식이나 낡은 파라미터 규격을 As-Is로 가져오지 않고, **이벤트 스토밍(Event Storming) 기반의 CQRS(명령/조회 분리) 원칙에 맞게 재설계된 To-Be REST API 규격**입니다.
+* **어떻게 활용하나요?**: 
+  * `swagger.json` 파일을 [Swagger Editor](https://editor.swagger.io/) 화면에 드래그 앤 드롭해 보세요. (또는 HTML 리포트의 `[📖 OpenAPI (Swagger) 명세서 보기]` 버튼 클릭)
+  * 프론트엔드 개발자와 백엔드 개발자가 MSA 전환 후 새롭게 통신하게 될 API 스펙을 논의할 때 훌륭한 초안(Draft) 문서로 활용됩니다.
 
 ---
 
